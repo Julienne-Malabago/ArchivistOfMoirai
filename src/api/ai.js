@@ -4,8 +4,11 @@
  * @typedef {'FATE' | 'CHOICE' | 'CHANCE'} AxiomTag
  */
 
-// The endpoint of your Node/Express server
-const API_ENDPOINT = '/api/generate-fragment';
+const API_ENDPOINT =
+    import.meta.env.DEV
+        ? "http://localhost:3001/api/generate-fragment"
+        : `${window.location.origin}/api/generate-fragment`;
+
 
 // Function to implement exponential backoff for retries
 const exponentialBackoffFetch = async (url, options, retries = 3) => {
