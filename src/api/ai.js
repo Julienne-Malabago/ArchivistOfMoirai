@@ -5,7 +5,7 @@
  */
 
 // The endpoint of your Node/Express server
-const API_ENDPOINT = '/api/server';
+const API_ENDPOINT = '/api/server.js';
 
 // Function to implement exponential backoff for retries
 const exponentialBackoffFetch = async (url, options, retries = 3) => {
