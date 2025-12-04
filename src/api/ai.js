@@ -4,8 +4,8 @@
  * @typedef {'FATE' | 'CHOICE' | 'CHANCE'} AxiomTag
  */
 
-// The endpoint of your Node/Express server
-const API_ENDPOINT = '/api/server';
+// The endpoint of your Vercel server
+const API_ENDPOINT = '/api/generate-fragment';
 
 // Function to implement exponential backoff for retries
 const exponentialBackoffFetch = async (url, options, retries = 3) => {
