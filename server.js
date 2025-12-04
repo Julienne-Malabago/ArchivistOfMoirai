@@ -1,60 +1,38 @@
-// server.js (Node/Express Backend using @google/genai)
+// server.js (Refactored for Vercel Serverless)
 
-// CHANGE 1: Use full dotenv import for explicit configuration
 import express from 'express';
 import cors from 'cors';
 import { GoogleGenAI } from '@google/genai';
-import * as dotenv from 'dotenv'; 
+// import * as dotenv from 'dotenv'; // REMOVE: Vercel loads environment vars automatically
 
-// CHANGE 2: Explicitly call config to ensure the .env file is loaded from the current working directory
-dotenv.config();
+// dotenv.config(); // REMOVE: Vercel loads environment vars automatically
 
 const app = express();
-// PORT CHANGE: Reverting to port 3001 as requested.
-const PORT = process.env.PORT || 3001;
+// const PORT = process.env.PORT || 3001; // REMOVE: Vercel handles the port
 
 // --- GENAI Configuration ---
-// Note: GenAI uses GEMINI_API_KEY environment variable by default, 
-// but we'll manually set it for clarity if OPENAI_API_KEY was previously used.
+// Vercel loads GEMINI_API_KEY from environment variables configured in the dashboard.
 const apiKey = process.env.GEMINI_API_KEY; 
 const MODEL_NAME = 'gemini-2.5-flash';
 
 if (!apiKey) {
-    console.error("CRITICAL: GEMINI_API_KEY is not set in the .env file! Please set it and restart.");
-    process.exit(1);
+    // Vercel deployment will log this error if the environment variable is missing
+    console.error("CRITICAL: GEMINI_API_KEY environment variable is not set!");
+    // We do not call process.exit(1) in a serverless function, just log and handle the error.
 }
 
-// Initialize the GenAI Client
-const genai = new GoogleGenAI({ apiKey });
+// Initialize the GenAI Client (only if key is present)
+const genai = apiKey ? new GoogleGenAI({ apiKey }) : null;
 
-const allowedOrigins = [
-    'http://localhost:5173',
-    'http://localhost:5174',
-    'http://localhost:5175',
-    'http://localhost:5176',
-    'http://localhost:5177',
-];
+// Allow all origins when deployed on Vercel, as the frontend will be on the same domain.
+// During local development, the frontend may still need specific localhost:port allowed.
+// For Vercel deployment, we simplify this.
+app.use(cors());
 
 // --- Express Middleware ---
 
-// CRITICAL FIX: Middleware to parse JSON request bodies. 
-// Without this, req.body is undefined, causing the server to crash on POST requests.
+// Middleware to parse JSON request bodies.
 app.use(express.json());
-
-// Allow the React frontend (running on default Vite port 5173) to access the API
-app.use(cors({
-    origin: function (origin, callback) {
-        // Allow requests with no origin (like mobile apps or curl)
-        if (!origin) return callback(null, true);
-        if (allowedOrigins.indexOf(origin) === -1) {
-            const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-            return callback(new Error(msg), false);
-        }
-        return callback(null, true);
-    },
-    methods: ['POST'],
-    allowedHeaders: ['Content-Type'],
-}));
 
 // --- Helper Function to Extract JSON from Text ---
 function extractJson(text) {
@@ -72,8 +50,13 @@ function extractJson(text) {
 }
 
 // --- API Route: Generate Fragment ---
+// The route remains /api/generate-fragment
 app.post('/api/generate-fragment', async (req, res) => {
-    // req.body should now be populated thanks to app.use(express.json())
+    // Check for API Key configuration
+    if (!genai) {
+        return res.status(500).json({ error: "AI Service Not Configured: Missing GEMINI_API_KEY environment variable." });
+    }
+    
     const { secretTag, difficultyTier } = req.body;
 
     if (!secretTag || !difficultyTier) {
@@ -124,7 +107,7 @@ app.post('/api/generate-fragment', async (req, res) => {
         const data = extractJson(jsonText);
         
         if (data && data.fragmentText && data.revelationText) {
-            return res.json(data);
+            return res.status(200).json(data);
         } else {
             console.error("GenAI Response Error (Invalid JSON structure):", jsonText);
             return res.status(500).json({ error: "AI response format was invalid or unparsable." });
@@ -136,8 +119,7 @@ app.post('/api/generate-fragment', async (req, res) => {
     }
 });
 
-// --- Server Startup ---
-app.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
-    console.log(`Ensure you have set GEMINI_API_KEY in your .env file.`);
-});
+// --- CRITICAL CHANGE: REMOVE app.listen(...) AND EXPORT THE APP ---
+// app.listen(PORT, ...) block removed.
+
+export default app;
