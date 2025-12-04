@@ -1,0 +1,15 @@
+// vercel.json (Place this file in the root directory)
+{
+    "builds": [
+        {
+            "src": "server.js",
+            "use": "@vercel/node"
+        }
+    ],
+    "routes": [
+        {
+            "src": "/api/generate-fragment",
+            "dest": "server.js"
+        }
+    ]
+}
