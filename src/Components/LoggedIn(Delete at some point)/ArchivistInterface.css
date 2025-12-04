@@ -1,0 +1,222 @@
+/* Custom Styles for the Athenaeum Theme */
+/* Universal Box Sizing Reset for Layout Stability */
+* {
+    box-sizing: border-box;
+}
+
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap');
+
+/* Color Palette */
+:root {
+    --color-dark-teal: #1a1a2e;
+    --color-parchment: #f7f4e9;
+    --color-dark-text: #363636;
+    --color-gold: #ffd700;
+    --color-error: #cc0000;
+}
+
+body {
+    font-family: 'Playfair Display', serif;
+    margin: 0;
+    padding: 0;
+    background-color: var(--color-dark-teal);
+    color: var(--color-parchment);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    background-image: linear-gradient(rgba(0,0,0,0.6), rgba(0,0,0,0.8)), url('https://placehold.co/1920x1080/1a1a2e/ffd700?text=Ancient+Library+Doors');
+    background-size: cover;
+    background-position: center;
+}
+
+.login-container {
+    background-color: var(--color-parchment);
+    color: var(--color-dark-text);
+    padding: 40px;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 10px var(--color-gold);
+    max-width: 400px;
+    width: 90%;
+    text-align: center;
+    border: 3px solid var(--color-gold);
+    position: relative;
+}
+
+.header-title {
+    font-family: 'Cinzel', serif;
+    font-size: 2.2rem;
+    margin-bottom: 5px;
+    color: #5d4037; /* Darker tone for emphasis */
+    letter-spacing: 2px;
+}
+
+.header-subtitle {
+    font-style: italic;
+    font-size: 0.9rem;
+    color: #795548;
+    margin-bottom: 25px;
+}
+
+.input-group {
+    margin-bottom: 20px;
+    position: relative;
+}
+
+.input-group label {
+    display: none;
+}
+
+.input-group input {
+    width: 100%;
+    padding: 12px 12px 12px 40px; /* Space for icon */
+    border: 2px solid var(--color-gold);
+    border-radius: 8px;
+    background-color: #fffaf0;
+    font-size: 1rem;
+    color: var(--color-dark-text);
+    transition: all 0.3s;
+}
+
+.input-group input:focus {
+    outline: none;
+    box-shadow: 0 0 5px var(--color-gold);
+    border-color: #b8860b;
+}
+
+.input-icon {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #795548;
+    width: 20px;
+    height: 20px;
+    /* Styles for the emoji/icon inside the input field */
+    line-height: 20px; 
+    text-align: center;
+}
+
+.button-primary {
+    width: 100%;
+    padding: 12px;
+    margin-top: 10px;
+    border: none;
+    border-radius: 8px;
+    background-color: var(--color-gold);
+    color: var(--color-dark-text);
+    font-family: 'Cinzel', serif;
+    font-size: 1.1rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.button-primary:hover {
+    background-color: #b8860b;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 10px rgba(0, 0, 0, 0.2);
+}
+
+.button-primary:disabled {
+    background-color: #aaa;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.google-button {
+    background-color: #dd4b39;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px;
+}
+
+.google-button:hover {
+    background-color: #c23321;
+}
+
+.google-icon {
+    margin-right: 10px;
+    width: 20px;
+    height: 20px;
+}
+
+.toggle-text {
+    margin-top: 20px;
+    font-size: 0.9rem;
+    color: #795548;
+}
+
+.toggle-link {
+    color: #b8860b;
+    text-decoration: none;
+    font-weight: bold;
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+.toggle-link:hover {
+    color: var(--color-gold);
+}
+
+.message-box {
+    min-height: 20px;
+    padding: 10px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    display: none;
+}
+
+/* Override display:none when active */
+.message-box.message-error,
+.message-box.message-success {
+    display: block !important;
+}
+
+.message-error {
+    background-color: #fce8e6;
+    color: var(--color-error);
+    border: 1px solid var(--color-error);
+}
+
+.message-success {
+    background-color: #e6ffec;
+    color: #2e7d32;
+    border: 1px solid #2e7d32;
+}
+
+/* User Info Box */
+.user-info {
+    /* Initially hidden */
+    display: none; 
+    background-color: #fff8e1;
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid var(--color-gold);
+    text-align: left;
+    margin-bottom: 20px;
+}
+.user-info h3 {
+    font-family: 'Cinzel', serif;
+    color: #5d4037;
+    margin-top: 0;
+    border-bottom: 1px solid #c9c9c9;
+    padding-bottom: 10px;
+    margin-bottom: 10px;
+}
+.user-info p {
+    margin: 5px 0;
+    font-size: 0.95rem;
+}
+.user-id {
+    font-size: 0.8rem;
+    word-break: break-all;
+    background-color: #eee;
+    padding: 5px;
+    border-radius: 4px;
+}

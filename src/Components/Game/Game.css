@@ -1,0 +1,365 @@
+/* --- Global Reset & Fullscreen Container --- */
+body, html, #root {
+    margin: 0;
+    padding: 0;
+    height: 100%; /* Important: makes the body and root container full height */
+    overflow: hidden; /* Allow scrolling if content overflows */
+    background-color: var(--color-dark-teal); /* Use the dark teal color */
+    color: var(--color-parchment);
+    font-family: 'Playfair Display', serif;
+}
+
+/* Base style for all game containers (loading, ready, playing) */
+.game-container {
+    padding: 30px;
+    background-color: var(--color-dark-teal); /* Should already be set on body/root, but good for fallback */
+    color: var(--color-parchment);
+    font-family: 'Playfair Display', serif;
+    min-height: 99vh; /* Ensure it covers the whole viewport height */
+    box-sizing: border-box; /* Include padding in height calculation */
+    width: 90vw;
+}
+
+/* Class to enforce the full-screen layout and centering the content area */
+.fullscreen-layout {
+    min-height: 100vh;
+    padding: 0; /* Remove padding from the outer container */
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Style for the centered content area */
+.fullscreen-layout > * {
+    max-width: 1200px; /* Increased max-width for a more spacious feel */
+    width: 90%;
+    margin: 0 auto;
+    padding: 20px 0; /* Add vertical padding to content */
+    box-sizing: border-box;
+}
+
+/* --- Header Section (The Ribbon) --- */
+.game-header {
+    /* Full-width ribbon style */
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: #2a2a3e; /* Slightly darker background for the ribbon */
+    border-bottom: 2px solid var(--color-gold); /* Solid line at the bottom */
+    padding: 15px 0;
+    margin: 0; /* Remove default margin */
+}
+
+.ribbon-layout {
+    padding: 15px 5%; /* Add 5% padding to the sides of the ribbon */
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    box-sizing: border-box;
+}
+
+.header-left {
+    display: flex;
+    flex-direction: column; /* CRITICAL: Stacks title-block and user-info-block vertically */
+    align-items: flex-start; /* Ensures content aligns to the left */
+    gap: 5px; /* Reduced vertical space between the blocks */
+}
+
+.title-block {
+    display: flex;
+    align-items: center;
+    /* Ensure no vertical margin here to keep it tight to the ribbon */
+    margin: 0; 
+}
+
+.user-info-block {
+    /* Aligns Username and User ID vertically (already set, maintaining it) */
+    display: flex;
+    flex-direction: column;
+    text-align: left;
+    white-space: nowrap; 
+    /* Optional: Add a small indentation or margin to visually separate from the main title */
+    margin-left: 4rem; 
+    margin-top: -1rem; /* Small push down from the title */
+}
+
+.header-right {
+    text-align: right;
+}
+
+.star-icon {
+    font-size: 2.5rem;
+    color: var(--color-gold);
+    margin-right: 10px;
+}
+
+.game-title {
+    font-family: 'Cinzel', serif;
+    font-size: 1.8rem;
+    margin: 0;
+    color: var(--color-parchment);
+    letter-spacing: 1px;
+}
+
+.welcome-text, .user-id {
+    font-size: 1rem;
+    margin: 0;
+    line-height: 1.3;
+    color: #e0e0e0;
+}
+
+.user-id {
+    font-size: 0.85rem;
+    color: #999;
+    font-style: italic;
+}
+
+.sign-out-link {
+    cursor: pointer;
+    /* Redefine button-primary style for the log out link for the requested look */
+    padding: 10px 20px;
+    border: 2px solid var(--color-gold);
+    border-radius: 5px;
+    background-color: transparent;
+    color: var(--color-gold);
+    font-weight: bold;
+    font-family: 'Cinzel', serif;
+    transition: background-color 0.2s, color 0.2s;
+}
+
+.sign-out-link:hover {
+    background-color: var(--color-gold);
+    color: var(--color-dark-text);
+}
+
+
+/* --- Metrics Tally --- */
+.metrics-tally {
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    background-color: #313146; /* Slightly lighter dark background */
+    padding: 15px 30px;
+    border-radius: 8px;
+    margin-top: 20px; /* Added margin-top to separate from header */
+    margin-bottom: 25px;
+    border: 1px solid #4a4a6b;
+}
+
+/* ... (Rest of the metrics-tally styles remain the same) ... */
+
+.metric {
+    text-align: center;
+}
+
+.metric-icon {
+    font-size: 1.2rem;
+    color: var(--color-gold);
+    margin-right: 5px;
+}
+
+.metric-label {
+    font-size: 0.8rem;
+    margin: 0;
+    color: #ccc;
+    font-family: 'Cinzel', serif;
+}
+
+.metric-value {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: var(--color-parchment);
+    margin: 5px 0 0 0;
+}
+
+/* --- Archival Scroll (Fragment) --- */
+.archival-scroll {
+    background-color: #313146;
+    padding: 30px;
+    border-radius: 8px;
+    border: 1px solid var(--color-gold);
+    margin-bottom: 30px;
+    box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.4);
+    flex-grow: 1; /* Allows the scroll content to take up remaining vertical space */
+    max-height: calc(100vh - 400px);
+    overflow: auto;
+}
+
+
+.scroll-title {
+    font-family: 'Cinzel', serif;
+    font-size: 1.4rem;
+    color: var(--color-gold);
+    border-bottom: 1px solid rgba(var(--color-gold), 0.5);
+    padding-bottom: 5px;
+    margin-top: 0;
+    margin-bottom: 15px;
+}
+
+.scroll-fragment {
+    font-size: 1.1rem;
+    line-height: 1.6;
+    color: var(--color-parchment);
+    font-style: italic;
+    overflow-wrap: break-word;
+}
+
+/* --- Classifier (Buttons) --- */
+.classifier {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.classifier-title {
+    font-family: 'Cinzel', serif;
+    font-size: 1.2rem;
+    color: var(--color-parchment);
+    margin-bottom: 20px;
+    margin-top: -2rem;
+}
+
+.classifier-buttons {
+    display: flex;
+    justify-content: space-around;
+    gap: 20px;
+}
+
+.classifier-button {
+    flex-grow: 1;
+    padding: 15px 20px;
+    border: none;
+    border-radius: 10px;
+    background-color: var(--color-gold);
+    color: var(--color-dark-text);
+    font-family: 'Cinzel', serif;
+    font-size: 1.2rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background-color 0.2s, transform 0.2s, box-shadow 0.2s;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+}
+
+.classifier-button:hover:not(:disabled) {
+    background-color: #b8860b;
+    transform: translateY(-2px);
+}
+
+.classifier-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.classifier-button.selected {
+    border: 4px solid var(--color-parchment);
+    background-color: #b8860b;
+    box-shadow: 0 0 20px rgba(var(--color-gold), 0.8);
+}
+
+
+/* --- Revelation Panel (Modal) --- */
+.revelation-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.revelation-panel {
+    background-color: var(--color-parchment);
+    color: var(--color-dark-text);
+    padding: 40px;
+    border-radius: 12px;
+    max-width: 600px;
+    width: 90%;
+    text-align: center;
+    border: 5px double var(--color-gold);
+    box-shadow: 0 0 40px rgba(var(--color-gold), 0.6);
+}
+
+.revelation-header {
+    font-family: 'Cinzel', serif;
+    font-size: 1.8rem;
+    margin-top: 0;
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+}
+
+.revelation-header.correct {
+    color: #2e7d32; /* Dark green */
+    border-bottom: 2px solid #2e7d32;
+}
+
+.revelation-header.incorrect {
+    color: var(--color-error); /* Red */
+    border-bottom: 2px solid var(--color-error);
+}
+
+.revelation-focus {
+    font-size: 1.2rem;
+    font-weight: bold;
+    color: #5d4037;
+    margin-bottom: 15px;
+}
+
+.revelation-justification {
+    font-size: 1rem;
+    line-height: 1.5;
+    text-align: left;
+    background-color: #fffaf0;
+    padding: 15px;
+    border-radius: 6px;
+    border: 1px solid #c9c9c9;
+}
+
+.revelation-panel hr {
+    border-color: #ccc;
+    margin: 15px 0;
+}
+
+.continue-button {
+    margin-top: 25px;
+}
+
+/* --- Custom Modal (forshowAlert) --- */
+.custom-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 2000; /* Higher than revelation overlay */
+}
+
+.custom-modal-content {
+    background-color: var(--color-dark-teal);
+    color: var(--color-parchment);
+    padding: 30px;
+    border-radius: 10px;
+    max-width: 400px;
+    text-align: center;
+    border: 3px solid var(--color-gold);
+    box-shadow: 0 0 30px rgba(var(--color-gold), 0.5);
+}
+
+.custom-modal-content h3 {
+    font-family: 'Cinzel', serif;
+    color: var(--color-gold);
+    margin-top: 0;
+    border-bottom: 1px solid var(--color-gold);
+    padding-bottom: 10px;
+    margin-bottom: 15px;
+}
+
+.custom-modal-content p {
+    margin-bottom: 20px;
+}

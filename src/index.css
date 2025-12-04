@@ -1,0 +1,625 @@
+/* --- Imports --- */
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap');
+
+/* --- Color Palette --- */
+:root {
+    --color-dark-teal: #1a1a2e;
+    --color-parchment: #f7f4e9;
+    --color-dark-text: #363636;
+    --color-gold: #ffd700;
+    --color-error: #cc0000;
+}
+
+/* Universal Box Sizing Reset for Layout Stability */
+* {
+   box-sizing: border-box;
+}
+
+/* --- MODIFIED ROOT/GLOBAL STYLES --- */
+
+html {
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    /* 1. Reset and Font */
+    font-family: 'Playfair Display', serif;
+    margin: 0;
+    padding: 0;
+    color: var(--color-parchment); /* Set text color globally */
+
+    /* 2. Full Viewport Size and Background */
+    min-height: 100vh; /* Ensures full height coverage */
+    width: 100vw; /* Ensures full width coverage */
+
+    /* NOTE: The background image path 'C:/Users/KATANA/Desktop/AppDevProj/ArchivistOfMoirai/src/ancient library.jpg'
+       is a local file path and will not load in a web browser. I'm keeping the styles but commenting
+       on the path for the user's reference. A functional URL or asset would be needed here. */
+    /* background-image: url('C:/Users/KATANA/Desktop/AppDevProj/ArchivistOfMoirai/src/ancient library.jpg'); */
+    background-image: url('https://i.pinimg.com/1200x/57/9e/e7/579ee797400e5073e93cdb93bd4e0f2c.jpg');
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+    background-color: #000000; /* Fallback color */
+
+    /* 3. Centering Logic for Login/Outer Content */
+    display: flex;
+    justify-content: center; /* Center horizontally */
+    align-items: center; /* Center vertically */
+
+    /* 4. Overflow Control */
+    overflow: hidden;
+}
+
+/* Class to enforce the full-screen layout and centering the content area (used after login) */
+.fullscreen-layout {
+    min-height: 100vh;
+    padding: 0; /* Remove padding from the outer container */
+    margin: 0;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    /* Override body centering for main application view */
+    justify-content: flex-start;
+    align-items: center;
+    overflow-y: auto; /* Allows scrolling for content overflow */
+    overflow-x: hidden;
+    background-color: transparent; /* Let the body's background show through */
+}
+
+/* Base style for all game containers (loading, ready, playing) */
+.game-container {
+    /* Styles for the main content area *inside* the fullscreen-layout */
+    margin-top: 1rem;
+    margin-bottom: 1rem;
+    padding: 2rem; /* Updated as requested */
+    color: var(--color-parchment);
+    font-family: 'Playfair Display', serif;
+    box-sizing: border-box; /* Include padding in height calculation */
+    width: 80vw; /* Updated to fixed width */
+    height: 90vh; /* Updated to fixed height */
+    background-color: rgba(26, 26, 46, 0.9); /* Semi-transparent dark teal background for content readability */
+    border-radius: 12px;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+     overflow: auto; /* Enable scrolling */
+    
+    /* Hide scrollbar for various browsers */
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;
+    
+}
+
+
+/* Style for the centered content area (This might be redundant if using .game-container, but keeping for compatibility) */
+.fullscreen-layout > * {
+    /* This rule targets direct children of the fullscreen-layout, which should mostly be the header and the main content wrapper */
+    margin-bottom: 4rem;
+    width: 100%;
+    margin: 0 auto; /* Center the content blocks */
+    padding: 2rem; /* Add vertical padding to content */
+    box-sizing: border-box;
+}
+
+
+/* --- Header Section (The Ribbon) --- */
+.game-header {
+    /* Full-width ribbon style container */
+    width: 100%;
+    background-color: rgba(42, 42, 62, 0.95); /* Slightly darker, semi-transparent background for the ribbon */
+    border-bottom: 2px solid var(--color-gold); /* Solid line at the bottom */
+    padding: 15px 0;
+    margin: 0; /* Remove default margin */
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+
+.ribbon-layout {
+    /* Content wrapper inside the header */
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 5%; /* Add 5% padding to the sides of the ribbon */
+    width: 100%;
+    max-width: 1200px; /* Match max-width of .game-container */
+    margin: 0 auto; /* Center the ribbon content */
+    box-sizing: border-box;
+}
+
+.header-left {
+    display: flex;
+    flex-direction: column; /* CRITICAL: Stacks title-block and user-info-block vertically */
+    align-items: flex-start; /* Ensures content aligns to the left */
+    gap: 5px; /* Reduced vertical space between the blocks */
+}
+
+.title-block {
+    display: flex;
+    align-items: center;
+    margin: 0;
+}
+
+.user-info-block {
+    display: flex;
+    flex-direction: column;
+    text-align: left;
+    white-space: nowrap;
+    margin-left: 4rem;
+    margin-top: -1rem; /* Small push down from the title */
+}
+
+.header-right {
+    text-align: right;
+}
+
+.star-icon {
+    font-size: 2.5rem;
+    color: var(--color-gold);
+    margin-right: 10px;
+}
+
+.game-title {
+    font-family: 'Cinzel', serif;
+    font-size: 1.8rem;
+    margin: 0;
+    color: var(--color-parchment);
+    letter-spacing: 1px;
+}
+
+.welcome-text, .user-id {
+    font-size: 1rem;
+    margin: 0;
+    line-height: 1.3;
+    color: #e0e0e0;
+}
+
+.user-id {
+    font-size: 0.85rem;
+    color: #999;
+    font-style: italic;
+    word-break: break-all;
+}
+
+.sign-out-link {
+    cursor: pointer;
+    padding: 10px 20px;
+    border: 2px solid var(--color-gold);
+    border-radius: 5px;
+    background-color: transparent;
+    color: var(--color-gold);
+    font-weight: bold;
+    font-family: 'Cinzel', serif;
+    transition: background-color 0.2s, color 0.2s;
+}
+
+.sign-out-link:hover {
+    background-color: var(--color-gold);
+    color: var(--color-dark-text);
+}
+
+
+/* --- Metrics Tally --- */
+.metrics-tally {
+    display: flex;
+    flex-wrap: wrap; /* Added for responsiveness */
+    justify-content: space-around;
+    align-items: center;
+    background-color: #313146; /* Slightly lighter dark background */
+    padding: 15px 30px;
+    border-radius: 8px;
+    margin-top: 20px; /* Added margin-top to separate from header */
+    margin-bottom: 25px;
+    border: 1px solid #4a4a6b;
+}
+
+.metric {
+    text-align: center;
+    margin: 10px; /* Added margin for spacing when wrapping */
+    min-width: 100px; /* Ensure metrics have space */
+}
+
+.metric-icon {
+    font-size: 1.2rem;
+    color: var(--color-gold);
+    margin-right: 5px;
+}
+
+.metric-label {
+    font-size: 0.8rem;
+    margin: 0;
+    color: #ccc;
+    font-family: 'Cinzel', serif;
+}
+
+.metric-value {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: var(--color-parchment);
+    margin: 5px 0 0 0;
+}
+
+/* --- Archival Scroll (Fragment) --- */
+.archival-scroll {
+    background-color: #313146;
+    padding: 30px;
+    border-radius: 8px;
+    border: 1px solid var(--color-gold);
+    margin-bottom: 30px;
+    box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.4);
+    flex-grow: 1; /* Allows the scroll content to take up remaining vertical space */
+}
+
+.scroll-title {
+    font-family: 'Cinzel', serif;
+    font-size: 1.4rem;
+    color: var(--color-gold);
+    border-bottom: 1px solid rgba(var(--color-gold), 0.5);
+    padding-bottom: 5px;
+    margin-top: 0;
+    margin-bottom: 15px;
+}
+
+.scroll-fragment {
+    font-size: 1.1rem;
+    line-height: 1.6;
+    color: var(--color-parchment);
+    font-style: italic;
+}
+
+/* --- Classifier (Buttons) --- */
+.classifier {
+    text-align: center;
+}
+
+.classifier-title {
+    font-family: 'Cinzel', serif;
+    font-size: 1.2rem;
+    color: var(--color-parchment);
+    margin-bottom: 20px;
+    margin-top: -1rem;
+}
+
+.classifier-buttons {
+    display: flex;
+    justify-content: space-around;
+    gap: 20px;
+}
+
+.classifier-button {
+    flex-grow: 1;
+    padding: 15px 20px;
+    border: none;
+    border-radius: 10px;
+    background-color: var(--color-gold);
+    color: var(--color-dark-text);
+    font-family: 'Cinzel', serif;
+    font-size: 1.2rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background-color 0.2s, transform 0.2s, box-shadow 0.2s;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+}
+
+.classifier-button:hover:not(:disabled) {
+    background-color: #b8860b;
+    transform: translateY(-2px);
+}
+
+.classifier-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.classifier-button.selected {
+    border: 4px solid var(--color-parchment);
+    background-color: #b8860b;
+    box-shadow: 0 0 20px rgba(var(--color-gold), 0.8);
+}
+
+
+/* --- Revelation Panel (Modal) --- */
+.revelation-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.revelation-panel {
+    background-color: var(--color-parchment);
+    color: var(--color-dark-text);
+    padding: 40px;
+    border-radius: 12px;
+    max-width: 600px;
+    width: 90%;
+    text-align: center;
+    border: 5px double var(--color-gold);
+    box-shadow: 0 0 40px rgba(255, 215, 0, 0.6); /* Using RGB from --color-gold */
+}
+
+.revelation-header {
+    font-family: 'Cinzel', serif;
+    font-size: 1.8rem;
+    margin-top: 0;
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+}
+
+.revelation-header.correct {
+    color: #2e7d32; /* Dark green */
+    border-bottom: 2px solid #2e7d32;
+}
+
+.revelation-header.incorrect {
+    color: var(--color-error); /* Red */
+    border-bottom: 2px solid var(--color-error);
+}
+
+.revelation-focus {
+    font-size: 1.2rem;
+    font-weight: bold;
+    color: #5d4037;
+    margin-bottom: 15px;
+}
+
+.revelation-justification {
+    font-size: 1rem;
+    line-height: 1.5;
+    text-align: left;
+    background-color: #fffaf0;
+    padding: 15px;
+    border-radius: 6px;
+    border: 1px solid #c9c9c9;
+}
+
+.revelation-panel hr {
+    border-color: #ccc;
+    margin: 15px 0;
+}
+
+.continue-button {
+    margin-top: 25px;
+}
+
+/* --- Custom Modal (forshowAlert) --- */
+.custom-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 2000; /* Higher than revelation overlay */
+}
+
+.custom-modal-content {
+    background-color: var(--color-dark-teal);
+    color: var(--color-parchment);
+    padding: 30px;
+    border-radius: 10px;
+    max-width: 400px;
+    text-align: center;
+    border: 3px solid var(--color-gold);
+    box-shadow: 0 0 30px rgba(255, 215, 0, 0.5); /* Using RGB from --color-gold */
+}
+
+.custom-modal-content h3 {
+    font-family: 'Cinzel', serif;
+    color: var(--color-gold);
+    margin-top: 0;
+    border-bottom: 1px solid var(--color-gold);
+    padding-bottom: 10px;
+    margin-bottom: 15px;
+}
+
+.custom-modal-content p {
+    margin-bottom: 20px;
+}
+
+/* --- Login-specific Styles --- */
+.login-container {
+    background-color: var(--color-parchment);
+    color: var(--color-dark-text);
+    padding: 40px;
+    border-radius: 12px;
+    /* Keeping the shadow for visual appeal */
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3), 0 0 10px var(--color-gold);
+    max-width: 400px;
+    width: 90%;
+    text-align: center;
+    border: 3px solid var(--color-gold);
+    position: relative;
+}
+
+.header-title {
+    font-family: 'Cinzel', serif;
+    font-size: 2.2rem;
+    margin-bottom: 5px;
+    color: #5d4037; /* Darker tone for emphasis */
+    letter-spacing: 2px;
+}
+
+.header-subtitle {
+    font-style: italic;
+    font-size: 0.9rem;
+    color: #795548;
+    margin-bottom: 25px;
+}
+
+.input-group {
+    margin-bottom: 20px;
+    position: relative;
+}
+
+.input-group label {
+    display: none;
+}
+
+.input-group input {
+    width: 100%;
+    padding: 12px 12px 12px 40px; /* Space for icon */
+    border: 2px solid var(--color-gold);
+    border-radius: 8px;
+    background-color: #fffaf0;
+    font-size: 1rem;
+    color: var(--color-dark-text);
+    transition: all 0.3s;
+}
+
+.input-group input:focus {
+    outline: none;
+    box-shadow: 0 0 5px var(--color-gold);
+    border-color: #b8860b;
+}
+
+.input-icon {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #795548;
+    width: 20px;
+    height: 20px;
+    /* Styles for the emoji/icon inside the input field */
+    line-height: 20px;
+    text-align: center;
+}
+
+.button-primary {
+    width: 100%;
+    padding: 12px;
+    margin-top: 10px;
+    border: none;
+    border-radius: 8px;
+    background-color: var(--color-gold);
+    color: var(--color-dark-text);
+    font-family: 'Cinzel', serif;
+    font-size: 1.1rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.button-primary:hover {
+    background-color: #b8860b;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 10px rgba(0, 0, 0, 0.2);
+}
+
+.button-primary:disabled {
+    background-color: #aaa;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.google-button {
+    background-color: #dd4b39;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px;
+}
+
+.google-button:hover {
+    background-color: #c23321;
+}
+
+.google-icon {
+    margin-right: 10px;
+    width: 20px;
+    height: 20px;
+}
+
+.toggle-text {
+    margin-top: 20px;
+    font-size: 0.9rem;
+    color: #795548;
+}
+
+.toggle-link {
+    color: #b8860b;
+    text-decoration: none;
+    font-weight: bold;
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+.toggle-link:hover {
+    color: var(--color-gold);
+}
+
+.message-box {
+    min-height: 20px;
+    padding: 10px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    display: none;
+}
+
+/* Override display:none when active */
+.message-box.message-error,
+.message-box.message-success {
+    display: block !important;
+}
+
+.message-error {
+    background-color: #fce8e6;
+    color: var(--color-error);
+    border: 1px solid var(--color-error);
+}
+
+.message-success {
+    background-color: #e6ffec;
+    color: #2e7d32;
+    border: 1px solid #2e7d32;
+}
+
+/* User Info Box (For Displaying Auth Info) */
+.user-info {
+    /* Initially hidden */
+    display: none;
+    background-color: #fff8e1;
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid var(--color-gold);
+    text-align: left;
+    margin-bottom: 20px;
+}
+.user-info h3 {
+    font-family: 'Cinzel', serif;
+    color: #5d4037;
+    margin-top: 0;
+    border-bottom: 1px solid #c9c9c9;
+    padding-bottom: 10px;
+    margin-bottom: 10px;
+}
+.user-info p {
+    margin: 5px 0;
+    font-size: 0.95rem;
+}
+.user-info .user-id {
+    font-size: 0.8rem;
+    word-break: break-all;
+    background-color: #eee;
+    padding: 5px;
+    border-radius: 4px;
+    /* Overrides the global .user-id style for visibility inside the login box */
+    color: #363636;
+    font-style: normal;
+}
