@@ -3,6 +3,7 @@ import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { auth, db } from "../../firebase";
 import { fetchFragmentFromAI } from "../../api/ai";
 
+// Constant for the Session Storage key
 const GAME_SESSION_KEY = "moirai_game_session";
 
 export function Game({ user, onSignOut }) {
@@ -86,15 +87,16 @@ export function Game({ user, onSignOut }) {
         } catch (error) {
             console.error("Fragment generation failed:", error);
             setSecretTag("ERROR");
-            setRevelationText("System failure. Check API key and server.");
+            setRevelationText("Due to a system failure, the true causal force cannot be determined. Check console for details.");
             setCurrentFragment("");
             setGameState('error');
-            showAlert("AI Generation Error", error.message);
+            showAlert("AI Generation Error", error.message || String(error));
         }
     }, [stats.difficultyTier, attemptCount, showAlert]);
 
     // --- Update Stats in Firestore ---
     const updateStatsInDb = useCallback(async (newStats) => {
+        if (!user || !user.uid) return;
         const userDocRef = doc(db, "users", user.uid);
         try {
             await updateDoc(userDocRef, {
@@ -108,9 +110,9 @@ export function Game({ user, onSignOut }) {
                 totalIncorrect: newStats.totalIncorrect,
             });
         } catch (error) {
-            console.error("Error updating stats:", error);
+            console.error("Error updating stats in Firestore:", error);
         }
-    }, [user.uid, totalRoundsPlayed]);
+    }, [user, totalRoundsPlayed]);
 
     // --- Load User Stats & Session ---
     useEffect(() => {
@@ -139,7 +141,7 @@ export function Game({ user, onSignOut }) {
                 }
             } catch (error) {
                 console.error("Error fetching user data:", error);
-                showAlert("Data Error", "Could not load user progress.");
+                showAlert("Data Error", "Could not load user progress from the Archives.");
                 setGameState('error');
                 return;
             }
@@ -215,6 +217,7 @@ export function Game({ user, onSignOut }) {
         sessionStorage.removeItem(GAME_SESSION_KEY);
         setStats(prev => ({ ...prev, currentScore: 0, currentStreak: 0 }));
         setAttemptCount(0);
+        setInitialLoadComplete(true);
         setIsSessionActive(false);
         setGameState('ready_to_start');
     };
@@ -237,7 +240,7 @@ export function Game({ user, onSignOut }) {
             if (newStats.currentScore > newStats.highestScore) newStats.highestScore = newStats.currentScore;
             if (newStats.currentStreak % 5 === 0) {
                 newStats.difficultyTier += 1;
-                promotionMessage = `Archivist Promotion! Difficulty Tier is now ${newStats.difficultyTier}.`;
+                promotionMessage = `Archivist Promotion! Difficulty Tier is now ${newStats.difficultyTier}. Prepare for greater subtlety!`;
             }
         } else {
             newStats.currentStreak = 0;
@@ -261,34 +264,37 @@ export function Game({ user, onSignOut }) {
 
     // --- Edit Profile Handlers ---
     const handleUsernameChange = async () => {
-        if (!newUsername.trim()) { showAlert("Invalid Username", "Enter a valid username."); return; }
+        if (!newUsername.trim()) { showAlert("Invalid Username", "Please enter a valid username."); return; }
         try {
             const userDocRef = doc(db, "users", user.uid);
             await updateDoc(userDocRef, { username: newUsername.trim() });
             setStats(prev => ({ ...prev, username: newUsername.trim() }));
             setEditProfileOpen(false);
-            showAlert("Username Updated", "Your username has been updated.");
-        } catch (e) { console.error(e); showAlert("Error", "Failed to update username."); }
+            showAlert("Username Updated", "Your username has been successfully updated.");
+        } catch (e) { console.error("Error updating username:", e); showAlert("Error", "Failed to update username."); }
     };
 
     const handlePasswordChange = async () => {
         if (!currentPassword || !newPassword || newPassword !== confirmNewPassword) {
-            showAlert("Password Error", "Passwords empty or mismatch.");
+            showAlert("Password Error", "Passwords do not match or fields are empty.");
             return;
         }
         try {
+            // Reauthenticate first (this uses the pattern you had in your code)
             const credential = auth.EmailAuthProvider.credential(user.email, currentPassword);
             await auth.currentUser.reauthenticateWithCredential(credential);
             await auth.currentUser.updatePassword(newPassword);
-            setCurrentPassword(""); setNewPassword(""); setConfirmNewPassword("");
+            setCurrentPassword("");
+            setNewPassword("");
+            setConfirmNewPassword("");
             setEditProfileOpen(false);
-            showAlert("Password Changed", "Password successfully updated.");
-        } catch (e) { console.error(e); showAlert("Password Change Failed", e.message); }
+            showAlert("Password Changed", "Your password has been successfully updated.");
+        } catch (e) { console.error("Password change failed:", e); showAlert("Password Change Failed", e.message); }
     };
 
     const displayAttemptCount = attemptCount === 0 ? 5 : attemptCount;
 
-    // --- Dropdown styles ---
+    // --- Dropdown styles (kept inline for animation & immediate visual) ---
     const dropdownStyles = {
         position: 'absolute',
         top: 'calc(100% + 8px)',
@@ -320,7 +326,38 @@ export function Game({ user, onSignOut }) {
         transition: 'background 0.2s',
     };
 
-    // --- Rendering the Game Component ---
+    // --- Render Logic ---
+
+    if (gameState === 'loading' && !initialLoadComplete) {
+        return (
+            <div className="game-container fullscreen-layout">
+                <div className="loading-spinner">
+                    <p>Accessing the Archives and Loading User Profile...</p>
+                </div>
+            </div>
+        );
+    }
+
+    // Session modal from original code (kept)
+    if (isSessionActive) {
+        return (
+            <div className="game-container fullscreen-layout">
+                <div className="custom-modal-overlay">
+                    <div className="custom-modal-content session-prompt">
+                        <h3>Archival Session Detected ⏳</h3>
+                        <p>A previous game session was found for {stats.username} (Attempt {displayAttemptCount}/5).</p>
+                        <p>Would you like to resume, or start a new game (resetting current score and streak)?</p>
+                        <div className="button-group">
+                            <button onClick={resumeSession} className="button-primary">Resume Session</button>
+                            <button onClick={startNewGame} className="button-primary button-danger">Start New Game</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // --- Main Render ---
     return (
         <div className="game-container">
             {/* Error Modal */}
@@ -334,7 +371,7 @@ export function Game({ user, onSignOut }) {
                 </div>
             )}
 
-            {/* Header */}
+            {/* Header (ribbon + dropdown) */}
             <header className="game-header ribbon-layout" style={{ position: 'relative' }}>
                 <div className="header-left ribbon-left">
                     <div className="title-block">
@@ -354,16 +391,20 @@ export function Game({ user, onSignOut }) {
 
                     <div style={dropdownStyles}>
                         <p><strong>Username:</strong> {stats.username}</p>
-                        <p><strong>UserID:</strong> {user.uid}</p>
+                        <p><strong>UserID:</strong> {user?.uid}</p>
                         <hr style={{ borderColor: '#555', margin: '0.5rem 0' }} />
                         <button
                             style={dropdownButtonStyles}
+                            onMouseOver={e => e.currentTarget.style.background = '#333'}
+                            onMouseOut={e => e.currentTarget.style.background = '#222'}
                             onClick={() => { setEditProfileOpen(true); setProfileDropdownOpen(false); }}
                         >
                             🪶 Edit Profile
                         </button>
                         <button
                             style={dropdownButtonStyles}
+                            onMouseOver={e => e.currentTarget.style.background = '#333'}
+                            onMouseOut={e => e.currentTarget.style.background = '#222'}
                             onClick={handleSignOut}
                         >
                             🗝️ Log Out
@@ -400,7 +441,7 @@ export function Game({ user, onSignOut }) {
                 </div>
             )}
 
-           {/* Metrics Tally */}
+            {/* Metrics Tally */}
             <div className="metrics-tally">
                 <div className="metric">
                     <span className="metric-icon">#</span>
@@ -437,7 +478,6 @@ export function Game({ user, onSignOut }) {
                     <p className="metric-label">Difficulty Tier:</p>
                     <p className="metric-value">{stats.difficultyTier}</p>
                 </div>
-                {/* NEW METRICS */}
                 <div className="metric">
                     <span className="metric-icon">✅</span>
                     <p className="metric-label">Total Correct:</p>
@@ -449,53 +489,56 @@ export function Game({ user, onSignOut }) {
                     <p className="metric-value">{stats.totalIncorrect}</p>
                 </div>
                 <div className="metric">
-                    <span className="metric-icon">💯</span>
-                    <p className="metric-label">Accuracy:</p>
+                    <span className="metric-icon">🎯</span>
+                    <p className="metric-label">Accuracy Rate:</p>
                     <p className="metric-value">{accuracyRate}%</p>
                 </div>
             </div>
-            
+
             {/* The Archival Scroll (Fragment Display) */}
-            <div className="archival-scroll">
+            <div className="archival-scroll fragment-container">
                 <h3 className="scroll-title">The Archival Scroll (Fragment)</h3>
-                <p className="scroll-fragment">
-                    {(gameState === 'loading' || gameState === 'error') ? "Accessing the Archival Stream..." : currentFragment }
+                <p className="scroll-fragment fragment-text">
+                    {(gameState === 'loading' || gameState === 'error') ? "Accessing the Archival Stream..." : (currentFragment || "Press 'Start Round' to access a fragment from the Moirai Archives...")}
                 </p>
             </div>
-            
-            {/* The Classifier (Buttons) */}
-            <div className="classifier">
-                <h3 className="classifier-title">Classify the Causal Force:</h3>
-                <div className="classifier-buttons">
-                    {classifierOptions.map(option => (
-                        <button
-                            key={option}
-                            className={`classifier-button ${userClassification === option ? 'selected' : ''}`}
-                            onClick={() => handleClassification(option)}
-                            disabled={gameState === 'revealing' || gameState === 'error' || gameState === 'loading'}
-                        >
-                            {option}
-                        </button>
-                    ))}
+
+            {/* Classification Options / Buttons */}
+            {gameState === 'playing' && (
+                <div className="classification-buttons classifier">
+                    <h3 className="classifier-title">Classify the Causal Force:</h3>
+                    <div className="classifier-buttons">
+                        {classifierOptions.map(option => (
+                            <button
+                                key={option}
+                                className={`classifier-button ${userClassification === option ? 'selected' : ''}`}
+                                onClick={() => handleClassification(option)}
+                            >
+                                {option}
+                            </button>
+                        ))}
+                    </div>
                 </div>
-            </div>
-            
-            {/* The Revelation Panel (Modal/Overlay) */}
+            )}
+
+            {/* Reveal / Revelation Panel */}
             {(gameState === 'revealing' || gameState === 'error') && (
                 <div className="revelation-overlay">
                     <div className="revelation-panel">
                         <h2 className={`revelation-header ${userClassification === secretTag ? 'correct' : 'incorrect'}`}>
-                            {gameState === 'error' ? '🛑 System Interruption' : userClassification === secretTag ? '✅ Axiom Confirmed: Correct Classification' : '❌ Axiom Error: Narrative Deception Successful'}
+                            {gameState === 'error' ? '🛑 System Interruption' : (userClassification === secretTag ? '✅ Axiom Confirmed: Correct Classification' : '❌ Axiom Error: Narrative Deception Successful')}
                         </h2>
+
                         <div className="revelation-text-box">
                             <p className="revelation-focus">
-                                The **True Causal Force** in this Fragment was: **{secretTag}**
+                                The <strong>True Causal Force</strong> in this Fragment was: <strong>{secretTag}</strong>
                             </p>
-                            <hr/>
+                            <hr />
                             <p className="revelation-justification">
-                                **Revelation Text:** {revelationText}
+                                <strong>Revelation Text:</strong> {revelationText}
                             </p>
                         </div>
+
                         <button
                             className="button-primary continue-button"
                             onClick={() => startNewRound(stats.difficultyTier)}
@@ -506,6 +549,12 @@ export function Game({ user, onSignOut }) {
                 </div>
             )}
 
+            {/* Ready to Start */}
+            {gameState === 'ready_to_start' && (
+                <div className="start-game-section">
+                    <button className="button-primary" onClick={() => startNewRound(stats.difficultyTier)}>Start Round</button>
+                </div>
+            )}
         </div>
     );
 }
