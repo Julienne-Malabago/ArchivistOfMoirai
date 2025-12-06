@@ -267,15 +267,7 @@ export function Registration() {
                     {isLoading ? "Processing..." : mainActionText}
                 </button>
             </form>
-
-            <button 
-                onClick={handleGoogleLogIn} 
-                className="button-primary google-button"
-                disabled={isLoading}
-            >
-                Continue with Google
-            </button>
-
+            
             <div className="toggle-text">
                 <span>{toggleText}</span>
                 <span className="toggle-link" onClick={toggleMode}>
