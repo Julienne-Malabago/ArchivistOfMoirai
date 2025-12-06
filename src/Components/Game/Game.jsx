@@ -311,7 +311,7 @@ export function Game({ user, onSignOut }) {
                 <div className="custom-modal-overlay">
                     <div className="custom-modal-content session-prompt">
                         <h3>Archival Session Detected ⏳</h3>
-                        <p>A previous game session was found for **{stats.username}** (Attempt **{displayAttemptCount}/5**). </p>
+                        <p>A previous game session was found for {stats.username} (Attempt {displayAttemptCount}/5). </p>
                         <p>Would you like to resume, or start a new game (resetting current score and streak)?</p>
                         <div className="button-group">
                             <button onClick={resumeSession} className="button-primary">Resume Session</button>
@@ -345,18 +345,48 @@ export function Game({ user, onSignOut }) {
                         <span className="star-icon">✨</span>
                         <h1 className="game-title">ARCHIVIST OF MOIRAI</h1>
                     </div>
-                    <div className="user-info-block">
-                        <p className="welcome-text">Username: **{stats.username}**</p>
-                        <p className="user-id">User ID: {user.uid.substring(0, 20)}...</p>
-                    </div>
                 </div>
+
                 <div className="header-right ribbon-right">
                     {/* Profile Icon Dropdown */}
-                    <span className="profile-icon" onClick={() => setProfileDropdownOpen(prev => !prev)}>🗝️</span>
+                    <span
+                        className="profile-icon"
+                        style={{ fontSize: '2rem', cursor: 'pointer' }}
+                        onClick={() => setProfileDropdownOpen(prev => !prev)}
+                    >
+                        📜
+                    </span>
                     {profileDropdownOpen && (
-                        <div className="profile-dropdown">
-                            <button onClick={() => { setEditProfileOpen(true); setProfileDropdownOpen(false); }}>Edit Profile</button>
-                            <button onClick={handleSignOut}>Log Out</button>
+                        <div className="profile-dropdown" style={{
+                            position: 'absolute',
+                            top: '100%',
+                            right: 0,
+                            background: '#1a1a1a',
+                            border: '1px solid #444',
+                            borderRadius: '8px',
+                            padding: '1rem',
+                            minWidth: '200px',
+                            zIndex: 50,
+                            boxShadow: '0 4px 10px rgba(0,0,0,0.3)',
+                            color: '#fff'
+                        }}>
+                            <p><strong>Username:</strong> {stats.username}</p>
+                            <p><strong>UserID:</strong> {user.uid}</p>
+                            <hr style={{ borderColor: '#555', margin: '0.5rem 0' }} />
+                            <button
+                                className="button-primary"
+                                style={{ display: 'block', width: '100%', marginBottom: '0.5rem' }}
+                                onClick={() => { setEditProfileOpen(true); setProfileDropdownOpen(false); }}
+                            >
+                                🪶 Edit Profile
+                            </button>
+                            <button
+                                className="button-primary button-danger"
+                                style={{ display: 'block', width: '100%' }}
+                                onClick={handleSignOut}
+                            >
+                                🗝️ Log Out
+                            </button>
                         </div>
                     )}
                 </div>
