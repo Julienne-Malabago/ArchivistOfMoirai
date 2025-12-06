@@ -390,8 +390,8 @@ export function Game({ user, onSignOut }) {
                     </span>
 
                     <div style={dropdownStyles}>
-                        <p><strong>Username:</strong> {stats.username}</p>
-                        <p><strong>UserID:</strong> {user?.uid}</p>
+                        <p style={{ textAlign: 'left' }}><strong>Username:</strong> {stats.username}</p>
+                        <p style={{ textAlign: 'left' }}><strong>UserID:</strong> {user?.uid}</p>
                         <hr style={{ borderColor: '#555', margin: '0.5rem 0' }} />
                         <button
                             style={dropdownButtonStyles}
