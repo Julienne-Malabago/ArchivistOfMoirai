@@ -339,7 +339,7 @@ export function Game({ user, onSignOut }) {
             )}
 
             {/* Header */}
-            <header className="game-header ribbon-layout">
+            <header className="game-header ribbon-layout" style={{ position: 'relative' }}>
                 <div className="header-left ribbon-left">
                     <div className="title-block">
                         <span className="star-icon">✨</span>
@@ -347,8 +347,7 @@ export function Game({ user, onSignOut }) {
                     </div>
                 </div>
 
-                <div className="header-right ribbon-right">
-                    {/* Profile Icon Dropdown */}
+                <div className="header-right ribbon-right" style={{ position: 'relative' }}>
                     <span
                         className="profile-icon"
                         style={{ fontSize: '2rem', cursor: 'pointer' }}
@@ -356,39 +355,28 @@ export function Game({ user, onSignOut }) {
                     >
                         📜
                     </span>
-                    {profileDropdownOpen && (
-                        <div className="profile-dropdown" style={{
-                            position: 'absolute',
-                            top: '100%',
-                            right: 0,
-                            background: '#1a1a1a',
-                            border: '1px solid #444',
-                            borderRadius: '8px',
-                            padding: '1rem',
-                            minWidth: '200px',
-                            zIndex: 50,
-                            boxShadow: '0 4px 10px rgba(0,0,0,0.3)',
-                            color: '#fff'
-                        }}>
-                            <p><strong>Username:</strong> {stats.username}</p>
-                            <p><strong>UserID:</strong> {user.uid}</p>
-                            <hr style={{ borderColor: '#555', margin: '0.5rem 0' }} />
-                            <button
-                                className="button-primary"
-                                style={{ display: 'block', width: '100%', marginBottom: '0.5rem' }}
-                                onClick={() => { setEditProfileOpen(true); setProfileDropdownOpen(false); }}
-                            >
-                                🪶 Edit Profile
-                            </button>
-                            <button
-                                className="button-primary button-danger"
-                                style={{ display: 'block', width: '100%' }}
-                                onClick={handleSignOut}
-                            >
-                                🗝️ Log Out
-                            </button>
-                        </div>
-                    )}
+
+                    <div style={dropdownStyles}>
+                        <p><strong>Username:</strong> {stats.username}</p>
+                        <p><strong>UserID:</strong> {user.uid}</p>
+                        <hr style={{ borderColor: '#555', margin: '0.5rem 0' }} />
+                        <button
+                            style={dropdownButtonStyles}
+                            onMouseOver={e => e.currentTarget.style.background = '#333'}
+                            onMouseOut={e => e.currentTarget.style.background = '#222'}
+                            onClick={() => { setEditProfileOpen(true); setProfileDropdownOpen(false); }}
+                        >
+                            🪶 Edit Profile
+                        </button>
+                        <button
+                            style={dropdownButtonStyles}
+                            onMouseOver={e => e.currentTarget.style.background = '#333'}
+                            onMouseOut={e => e.currentTarget.style.background = '#222'}
+                            onClick={handleSignOut}
+                        >
+                            🗝️ Log Out
+                        </button>
+                    </div>
                 </div>
             </header>
 
