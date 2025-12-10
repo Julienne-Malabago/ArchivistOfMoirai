@@ -26,8 +26,7 @@ export function Game({ user, onSignOut }) {
     const [revelationText, setRevelationText] = useState(null);
     const [errorMessage, setErrorMessage] = useState(null);
 
-    // Attempt counters and session state
-    const [attemptCount, setAttemptCount] = useState(0); // 0..5
+    const [attemptCount, setAttemptCount] = useState(1); // 1..5
     const [totalRoundsPlayed, setTotalRoundsPlayed] = useState(0);
     const [initialLoadComplete, setInitialLoadComplete] = useState(false);
     const [isSessionActive, setIsSessionActive] = useState(false);
@@ -64,7 +63,7 @@ export function Game({ user, onSignOut }) {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    // --- Update Stats in Firestore (includes attemptCount & totalRoundsPlayed) ---
+    // --- Update Stats in Firestore ---
     const updateStatsInDb = useCallback(async (newStats) => {
         if (!user || !user.uid) return;
         const userDocRef = doc(db, "users", user.uid);
@@ -109,6 +108,7 @@ export function Game({ user, onSignOut }) {
                         totalCorrect: permanentStats.totalCorrect || 0,
                         totalIncorrect: permanentStats.totalIncorrect || 0,
                     }));
+                    setAttemptCount(permanentStats.attemptCount ?? 1);
                 }
             } catch (error) {
                 console.error("Error fetching user data:", error);
@@ -117,7 +117,7 @@ export function Game({ user, onSignOut }) {
                 return;
             }
 
-            // Load session from sessionStorage if it matches the user
+            // Load session
             const storedSession = sessionStorage.getItem(GAME_SESSION_KEY);
             let sessionFound = false;
             if (storedSession) {
@@ -125,33 +125,28 @@ export function Game({ user, onSignOut }) {
                     const sessionData = JSON.parse(storedSession);
                     if (sessionData.userId === user.uid) {
                         sessionFound = true;
-                        // restore session values (including attemptCount)
                         setStats(prevStats => ({
                             ...prevStats,
                             currentScore: sessionData.currentScore ?? prevStats.currentScore,
                             currentStreak: sessionData.currentStreak ?? prevStats.currentStreak,
                             difficultyTier: sessionData.difficultyTier ?? prevStats.difficultyTier,
-                            highestStreak: Math.max(permanentStats.highestStreak || 0, sessionData.highestStreak || 0),
-                            highestScore: Math.max(permanentStats.highestScore || 0, sessionData.highestScore || 0),
+                            highestStreak: Math.max(prevStats.highestStreak, sessionData.highestStreak || 0),
+                            highestScore: Math.max(prevStats.highestScore, sessionData.highestScore || 0),
                         }));
-                        setAttemptCount(sessionData.attemptCount ?? 0);
+                        setAttemptCount(sessionData.attemptCount ?? 1);
                         setTotalRoundsPlayed(sessionData.totalRoundsPlayed ?? (permanentStats.totalRoundsPlayed || 0));
                         setCurrentFragment(sessionData.currentFragment || "");
                         setSecretTag(sessionData.secretTag || null);
                         setRevelationText(sessionData.revelationText || null);
                         setGameState(sessionData.gameState || 'ready_to_start');
-                        setIsSessionActive(false); // no modal interrupt beyond restoring session
+                        setIsSessionActive(false);
                     } else {
-                        // session belongs to a different user — remove
                         sessionStorage.removeItem(GAME_SESSION_KEY);
                     }
                 } catch (e) {
                     console.error("Error parsing session data:", e);
                     sessionStorage.removeItem(GAME_SESSION_KEY);
                 }
-            } else {
-                // No session — prefer attemptCount from Firestore if present, otherwise 0
-                setAttemptCount(permanentStats.attemptCount ?? 0);
             }
 
             setInitialLoadComplete(true);
@@ -161,7 +156,7 @@ export function Game({ user, onSignOut }) {
         fetchUserDataAndSession();
     }, [user, showAlert]);
 
-    // --- Persist Game State to sessionStorage while playing or revealing ---
+    // --- Persist Game State to sessionStorage ---
     useEffect(() => {
         if (user && (gameState === 'playing' || gameState === 'revealing')) {
             const sessionData = {
@@ -182,7 +177,7 @@ export function Game({ user, onSignOut }) {
         }
     }, [user, gameState, currentFragment, secretTag, revelationText, attemptCount, totalRoundsPlayed, stats]);
 
-    // --- Resume or Start New Session (modal choices) ---
+    // --- Resume / New Session ---
     const resumeSession = () => {
         const storedSession = sessionStorage.getItem(GAME_SESSION_KEY);
         if (!storedSession) { startNewGame(); return; }
@@ -190,7 +185,7 @@ export function Game({ user, onSignOut }) {
         setCurrentFragment(sessionData.currentFragment || "");
         setSecretTag(sessionData.secretTag || null);
         setRevelationText(sessionData.revelationText || null);
-        setAttemptCount(sessionData.attemptCount ?? 0);
+        setAttemptCount(sessionData.attemptCount ?? 1);
         setTotalRoundsPlayed(sessionData.totalRoundsPlayed ?? totalRoundsPlayed);
         setGameState(sessionData.gameState || 'ready_to_start');
         setIsSessionActive(false);
@@ -199,8 +194,7 @@ export function Game({ user, onSignOut }) {
     const startNewGame = () => {
         sessionStorage.removeItem(GAME_SESSION_KEY);
         setStats(prev => ({ ...prev, currentScore: 0, currentStreak: 0 }));
-        setAttemptCount(0);
-        setInitialLoadComplete(true);
+        setAttemptCount(1);
         setIsSessionActive(false);
         setGameState('ready_to_start');
         setCurrentFragment("");
@@ -210,9 +204,8 @@ export function Game({ user, onSignOut }) {
 
     // --- Start New Round ---
     const startNewRound = useCallback(async (currentDifficulty) => {
-        // Prevent starting beyond 5 attempts
-        if (attemptCount >= 5) {
-            showAlert("No Attempts Remaining", "You have used all 5 attempts. Log out to reset attempts or continue without starting a new round.");
+        if (attemptCount > 5) {
+            showAlert("No Attempts Remaining", "You have used all 5 attempts. Log out to reset attempts.");
             return;
         }
 
@@ -222,10 +215,9 @@ export function Game({ user, onSignOut }) {
         setRevelationText(null);
         setCurrentFragment("");
 
-        const nextAttemptCount = attemptCount + 1; // 0 -> 1 on first start
+        const nextAttemptCount = attemptCount;
         setAttemptCount(nextAttemptCount);
 
-        // Every time a round start is successful we increment totalRoundsPlayed
         setTotalRoundsPlayed(prev => prev + 1);
 
         const effectiveDifficulty = currentDifficulty || stats.difficultyTier;
@@ -238,7 +230,6 @@ export function Game({ user, onSignOut }) {
             setRevelationText(revText);
             setGameState('playing');
 
-            // Persist attemptCount and totalRoundsPlayed to Firestore as part of stats
             const updatedStatsForDb = {
                 ...stats,
                 totalRoundsPlayed: totalRoundsPlayed + 1,
@@ -246,7 +237,6 @@ export function Game({ user, onSignOut }) {
             };
             await updateStatsInDb(updatedStatsForDb);
 
-            // Persist the session to sessionStorage (user+state)
             if (user && user.uid) {
                 const sessionData = {
                     userId: user.uid,
@@ -302,76 +292,26 @@ export function Game({ user, onSignOut }) {
         setStats(newStats);
         updateStatsInDb({
             ...newStats,
-            attemptCount, // keep current attemptCount
+            attemptCount,
             totalRoundsPlayed,
         });
         if (promotionMessage) showAlert("Promotion Achieved", promotionMessage);
     };
 
-    // --- Sign Out: reset attempts & clear session storage, persist reset to Firestore ---
+    // --- Sign Out Handler ---
     const handleSignOut = useCallback(async () => {
-        // remove local session
         sessionStorage.removeItem(GAME_SESSION_KEY);
-
-        // Reset ephemeral stats (score/streak) locally
-        const finalStats = {
-            ...stats,
-            currentScore: 0,
-            currentStreak: 0,
-            attemptCount: 0,
-            totalRoundsPlayed: 0
-        };
-
-        // Persist reset attemptCount and rounds to Firestore
+        const finalStats = { ...stats, currentScore: 0, currentStreak: 0, attemptCount: 1, totalRoundsPlayed };
         await updateStatsInDb(finalStats);
-
-        // Reset UI state
-        setAttemptCount(0);
-        setTotalRoundsPlayed(0);
+        setAttemptCount(1);
         setIsSessionActive(false);
         setGameState('loading');
-
-        // call provided sign-out callback (which likely signs out from Firebase auth)
         onSignOut();
-    }, [stats, onSignOut, updateStatsInDb]);
+    }, [stats, onSignOut, updateStatsInDb, totalRoundsPlayed]);
 
-    // --- Edit Profile Handlers ---
-    const handleUsernameChange = async () => {
-        if (!newUsername.trim()) { showAlert("Invalid Username", "Please enter a valid username."); return; }
-        try {
-            const userDocRef = doc(db, "users", user.uid);
-            await updateDoc(userDocRef, { username: newUsername.trim() });
-            setStats(prev => ({ ...prev, username: newUsername.trim() }));
-            setEditProfileOpen(false);
-            showAlert("Username Updated", "Your username has been successfully updated.");
-        } catch (e) { console.error("Error updating username:", e); showAlert("Error", "Failed to update username."); }
-    };
-
-    const handlePasswordChange = async () => {
-        if (!currentPassword || !newPassword || newPassword !== confirmNewPassword) {
-            showAlert("Password Error", "Passwords do not match or fields are empty.");
-            return;
-        }
-        try {
-            // Note: keep auth reauthentication logic outside if not configured here
-            const credential = auth.EmailAuthProvider?.credential
-                ? auth.EmailAuthProvider.credential(user.email, currentPassword)
-                : null;
-            if (!credential) throw new Error("Reauthentication method unavailable.");
-            await auth.currentUser.reauthenticateWithCredential(credential);
-            await auth.currentUser.updatePassword(newPassword);
-            setCurrentPassword("");
-            setNewPassword("");
-            setConfirmNewPassword("");
-            setEditProfileOpen(false);
-            showAlert("Password Changed", "Your password has been successfully updated.");
-        } catch (e) { console.error("Password change failed:", e); showAlert("Password Change Failed", e.message); }
-    };
-
-    // displayAttemptCount now simply reflects attemptCount (0..5)
     const displayAttemptCount = attemptCount;
 
-    // --- Dropdown styles (kept inline for animation & immediate visual) ---
+    // --- Dropdown styles ---
     const dropdownStyles = {
         position: 'absolute',
         top: 'calc(100% + 8px)',
@@ -403,7 +343,7 @@ export function Game({ user, onSignOut }) {
         transition: 'background 0.2s',
     };
 
-    // --- Render Logic ---
+    // --- Render ---
     if (gameState === 'loading' && !initialLoadComplete) {
         return (
             <div className="game-container fullscreen-layout">
@@ -414,7 +354,6 @@ export function Game({ user, onSignOut }) {
         );
     }
 
-    // Session modal from original code (kept). Only shown if a previous session exists AND isSessionActive is true.
     if (isSessionActive) {
         return (
             <div className="game-container fullscreen-layout">
@@ -422,7 +361,6 @@ export function Game({ user, onSignOut }) {
                     <div className="custom-modal-content session-prompt">
                         <h3>Archival Session Detected ⏳</h3>
                         <p>A previous game session was found for {stats.username} (Attempt {displayAttemptCount}/5).</p>
-                        <p>Would you like to resume, or start a new game (resetting current score and streak)?</p>
                         <div className="button-group">
                             <button onClick={resumeSession} className="button-primary">Resume Session</button>
                             <button onClick={startNewGame} className="button-primary button-danger">Start New Game</button>
