@@ -6,6 +6,7 @@ import { fetchFragmentFromAI } from "../../api/ai";
 const GAME_SESSION_KEY = "moirai_game_session";
 
 export function Game({ user, onSignOut }) {
+    // --- User Stats ---
     const [stats, setStats] = useState({
         username: 'The Archivist',
         currentScore: 0,
@@ -17,6 +18,7 @@ export function Game({ user, onSignOut }) {
         totalIncorrect: 0,
     });
 
+    // --- Game State ---
     const [gameState, setGameState] = useState('loading'); // loading, playing, revealing, error, ready_to_start
     const [currentFragment, setCurrentFragment] = useState("");
     const [userClassification, setUserClassification] = useState(null);
@@ -24,22 +26,21 @@ export function Game({ user, onSignOut }) {
     const [revelationText, setRevelationText] = useState(null);
     const [errorMessage, setErrorMessage] = useState(null);
 
-    // Attempt counters
     const [attemptCount, setAttemptCount] = useState(1); // 1..5
     const [totalRoundsPlayed, setTotalRoundsPlayed] = useState(0);
     const [initialLoadComplete, setInitialLoadComplete] = useState(false);
     const [isSessionActive, setIsSessionActive] = useState(false);
 
+    // --- Profile / Dropdown ---
     const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
     const [editProfileOpen, setEditProfileOpen] = useState(false);
-
     const [newUsername, setNewUsername] = useState("");
     const [currentPassword, setCurrentPassword] = useState("");
     const [newPassword, setNewPassword] = useState("");
     const [confirmNewPassword, setConfirmNewPassword] = useState("");
+    const dropdownRef = useRef(null);
 
     const classifierOptions = ['FATE', 'CHOICE', 'CHANCE'];
-    const dropdownRef = useRef(null);
 
     const showAlert = useCallback((title, message) => {
         setErrorMessage({ title, message });
@@ -50,6 +51,7 @@ export function Game({ user, onSignOut }) {
         ? ((stats.totalCorrect / totalAttempts) * 100).toFixed(1)
         : 'N/A';
 
+    // --- Profile Dropdown Click Outside ---
     useEffect(() => {
         const handleClickOutside = (event) => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -60,11 +62,13 @@ export function Game({ user, onSignOut }) {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
+    // --- DB Update ---
     const updateStatsInDb = useCallback(async (newStats) => {
         if (!user || !user.uid) return;
         const userDocRef = doc(db, "users", user.uid);
         try {
             await updateDoc(userDocRef, {
+                username: newStats.username,
                 currentScore: newStats.currentScore,
                 currentStreak: newStats.currentStreak,
                 highestStreak: newStats.highestStreak,
@@ -80,79 +84,64 @@ export function Game({ user, onSignOut }) {
         }
     }, [user, totalRoundsPlayed, attemptCount]);
 
-    // --- Load user stats & session ---
+    // --- Load User & Session ---
     useEffect(() => {
         const fetchUserDataAndSession = async () => {
             setGameState('loading');
             if (!user) return;
 
-            const userDocRef = doc(db, "users", user.uid);
-            let permanentStats = {};
             try {
-                const docSnap = await getDoc(userDocRef);
-                if (docSnap.exists()) {
-                    permanentStats = docSnap.data();
-                    setTotalRoundsPlayed(permanentStats.totalRoundsPlayed || 0);
-                    setStats(s => ({
-                        ...s,
-                        username: permanentStats.username || 'The Archivist',
-                        currentScore: 0,
-                        currentStreak: 0,
-                        highestStreak: permanentStats.highestStreak || 0,
-                        difficultyTier: permanentStats.difficultyTier || 1,
-                        highestScore: permanentStats.highestScore || 0,
-                        totalCorrect: permanentStats.totalCorrect || 0,
-                        totalIncorrect: permanentStats.totalIncorrect || 0,
-                    }));
-                    setAttemptCount(permanentStats.attemptCount ?? 1);
-                }
-            } catch (error) {
-                console.error("Error fetching user data:", error);
-                showAlert("Data Error", "Could not load user progress from the Archives.");
-                setGameState('error');
-                return;
-            }
+                const docSnap = await getDoc(doc(db, "users", user.uid));
+                const permanentStats = docSnap.exists() ? docSnap.data() : {};
+                setStats(s => ({
+                    ...s,
+                    username: permanentStats.username || 'The Archivist',
+                    highestStreak: permanentStats.highestStreak || 0,
+                    difficultyTier: permanentStats.difficultyTier || 1,
+                    highestScore: permanentStats.highestScore || 0,
+                    totalCorrect: permanentStats.totalCorrect || 0,
+                    totalIncorrect: permanentStats.totalIncorrect || 0,
+                }));
+                setAttemptCount(permanentStats.attemptCount ?? 1);
+                setTotalRoundsPlayed(permanentStats.totalRoundsPlayed || 0);
 
-            // Load session
-            const storedSession = sessionStorage.getItem(GAME_SESSION_KEY);
-            if (storedSession) {
-                try {
+                // Load session
+                const storedSession = sessionStorage.getItem(GAME_SESSION_KEY);
+                if (storedSession) {
                     const sessionData = JSON.parse(storedSession);
                     if (sessionData.userId === user.uid) {
                         setStats(prev => ({
                             ...prev,
                             currentScore: sessionData.currentScore ?? prev.currentScore,
                             currentStreak: sessionData.currentStreak ?? prev.currentStreak,
-                            difficultyTier: sessionData.difficultyTier ?? prev.difficultyTier,
-                            highestStreak: Math.max(prev.highestStreak, sessionData.highestStreak || 0),
                             highestScore: Math.max(prev.highestScore, sessionData.highestScore || 0),
+                            highestStreak: Math.max(prev.highestStreak, sessionData.highestStreak || 0),
+                            difficultyTier: sessionData.difficultyTier ?? prev.difficultyTier,
                         }));
                         setAttemptCount(sessionData.attemptCount ?? 1);
-                        setTotalRoundsPlayed(sessionData.totalRoundsPlayed ?? (permanentStats.totalRoundsPlayed || 0));
+                        setTotalRoundsPlayed(sessionData.totalRoundsPlayed ?? permanentStats.totalRoundsPlayed || 0);
                         setCurrentFragment(sessionData.currentFragment || "");
                         setSecretTag(sessionData.secretTag || null);
                         setRevelationText(sessionData.revelationText || null);
                         setGameState(sessionData.gameState || 'ready_to_start');
                         setIsSessionActive(false);
-                    } else {
-                        sessionStorage.removeItem(GAME_SESSION_KEY);
-                    }
-                } catch (e) {
-                    console.error("Error parsing session data:", e);
-                    sessionStorage.removeItem(GAME_SESSION_KEY);
-                }
-            }
+                    } else sessionStorage.removeItem(GAME_SESSION_KEY);
+                } else setGameState('ready_to_start');
 
+            } catch (error) {
+                console.error("Error fetching user data:", error);
+                showAlert("Data Error", "Could not load user progress from the Archives.");
+                setGameState('error');
+            }
             setInitialLoadComplete(true);
-            if (!storedSession) setGameState('ready_to_start');
         };
         fetchUserDataAndSession();
     }, [user, showAlert]);
 
-    // --- Persist session ---
+    // --- Persist Session ---
     useEffect(() => {
         if (user && (gameState === 'playing' || gameState === 'revealing')) {
-            const sessionData = {
+            sessionStorage.setItem(GAME_SESSION_KEY, JSON.stringify({
                 userId: user.uid,
                 currentFragment,
                 secretTag,
@@ -162,21 +151,16 @@ export function Game({ user, onSignOut }) {
                 totalRoundsPlayed,
                 currentScore: stats.currentScore,
                 currentStreak: stats.currentStreak,
-                difficultyTier: stats.difficultyTier,
                 highestScore: stats.highestScore,
                 highestStreak: stats.highestStreak,
-            };
-            sessionStorage.setItem(GAME_SESSION_KEY, JSON.stringify(sessionData));
+                difficultyTier: stats.difficultyTier,
+            }));
         }
     }, [user, gameState, currentFragment, secretTag, revelationText, attemptCount, totalRoundsPlayed, stats]);
 
-    // --- Start a new round fragment ---
+    // --- Start New Fragment ---
     const startNewFragment = useCallback(async (currentDifficulty) => {
-        if (attemptCount > 5) {
-            showAlert("No Attempts Remaining", "You have used all 5 attempts. Log out to reset attempts.");
-            return;
-        }
-
+        if (attemptCount > 5) return showAlert("No Attempts Remaining", "You have used all 5 attempts. Log out to reset attempts.");
         setGameState('loading');
         setErrorMessage(null);
         setUserClassification(null);
@@ -195,14 +179,14 @@ export function Game({ user, onSignOut }) {
         } catch (error) {
             console.error("Fragment generation failed:", error);
             setSecretTag("ERROR");
-            setRevelationText("System error. True causal force unavailable.");
             setCurrentFragment("");
+            setRevelationText("System error. True causal force unavailable.");
             setGameState('error');
             showAlert("AI Generation Error", error.message || String(error));
         }
     }, [attemptCount, stats.difficultyTier, showAlert]);
 
-    // --- Classification / attempt handling ---
+    // --- Classification ---
     const handleClassification = (choice) => {
         if (gameState !== 'playing') return;
         setUserClassification(choice);
@@ -216,8 +200,8 @@ export function Game({ user, onSignOut }) {
             newStats.currentScore += 10;
             newStats.currentStreak += 1;
             newStats.totalCorrect += 1;
-            if (newStats.currentStreak > newStats.highestStreak) newStats.highestStreak = newStats.currentStreak;
-            if (newStats.currentScore > newStats.highestScore) newStats.highestScore = newStats.currentScore;
+            newStats.highestStreak = Math.max(newStats.highestStreak, newStats.currentStreak);
+            newStats.highestScore = Math.max(newStats.highestScore, newStats.currentScore);
             if (newStats.currentStreak % 5 === 0) {
                 newStats.difficultyTier += 1;
                 promotionMessage = `Archivist Promotion! Difficulty Tier is now ${newStats.difficultyTier}.`;
@@ -227,44 +211,70 @@ export function Game({ user, onSignOut }) {
             newStats.totalIncorrect += 1;
         }
 
-        // Increment attemptCount
-        const nextAttemptCount = attemptCount + 1;
-
-        // If attempts reach 5, increment totalRoundsPlayed, reset attemptCount
+        let nextAttemptCount = attemptCount + 1;
         let updatedTotalRounds = totalRoundsPlayed;
-        let resetAttempt = nextAttemptCount;
         if (nextAttemptCount > 5) {
             updatedTotalRounds += 1;
-            resetAttempt = 1; // reset for new round
+            nextAttemptCount = 1;
         }
 
         setStats(newStats);
-        setAttemptCount(resetAttempt);
+        setAttemptCount(nextAttemptCount);
         setTotalRoundsPlayed(updatedTotalRounds);
 
         updateStatsInDb({
             ...newStats,
-            attemptCount: resetAttempt,
+            attemptCount: nextAttemptCount,
             totalRoundsPlayed: updatedTotalRounds,
         });
 
         if (promotionMessage) showAlert("Promotion Achieved", promotionMessage);
     };
 
+    const handleSignOut = () => {
+        onSignOut?.();
+    };
+
+    // --- Profile Update Functions ---
+    const handleUsernameChange = async () => {
+        if (!newUsername.trim()) return showAlert("Error", "Username cannot be empty.");
+        const updatedStats = { ...stats, username: newUsername.trim() };
+        setStats(updatedStats);
+        await updateStatsInDb(updatedStats);
+        setNewUsername("");
+        setEditProfileOpen(false);
+    };
+
+    const handlePasswordChange = () => {
+        // Implement password change with Firebase Auth
+        showAlert("Info", "Password change logic not implemented in this snippet.");
+    };
+
     const displayAttemptCount = attemptCount;
 
-    return (
-        <div className="game-container">
-            {/* Render your UI here (header, fragment, buttons, metrics) */}
-            <p>Round Attempts: {displayAttemptCount} / 5</p>
-            <p>Total Rounds Completed: {totalRoundsPlayed}</p>
-            <button onClick={() => startNewFragment(stats.difficultyTier)}>Start Fragment</button>
-        </div>
-    );
-}
+    // --- Styles (minimal inline) ---
+    const dropdownStyles = {
+        display: profileDropdownOpen ? 'block' : 'none',
+        position: 'absolute',
+        right: 0,
+        top: '2.5rem',
+        background: '#222',
+        color: '#fff',
+        padding: '0.5rem',
+        borderRadius: '0.25rem',
+        width: '200px',
+        zIndex: 10
+    };
+    const dropdownButtonStyles = {
+        width: '100%',
+        padding: '0.25rem',
+        background: '#222',
+        color: '#fff',
+        border: 'none',
+        cursor: 'pointer',
+        marginBottom: '0.25rem'
+    };
 
-
-    // --- Main Render ---
     return (
         <div className="game-container">
             {/* Error Modal */}
@@ -278,44 +288,19 @@ export function Game({ user, onSignOut }) {
                 </div>
             )}
 
-            {/* Header (ribbon + dropdown) */}
+            {/* Header with Profile */}
             <header className="game-header ribbon-layout" style={{ position: 'relative' }}>
                 <div className="header-left ribbon-left">
-                    <div className="title-block">
-                        <span className="star-icon">✨</span>
-                        <h1 className="game-title">ARCHIVIST OF MOIRAI</h1>
-                    </div>
+                    <h1>ARCHIVIST OF MOIRAI ✨</h1>
                 </div>
-
                 <div className="header-right ribbon-right" style={{ position: 'relative' }} ref={dropdownRef}>
-                    <span
-                        className="profile-icon"
-                        style={{ fontSize: '2rem', cursor: 'pointer' }}
-                        onClick={() => setProfileDropdownOpen(prev => !prev)}
-                    >
-                        📜
-                    </span>
-
+                    <span style={{ fontSize: '2rem', cursor: 'pointer' }} onClick={() => setProfileDropdownOpen(prev => !prev)}>📜</span>
                     <div style={dropdownStyles}>
                         <p style={{ textAlign: 'left' }}><strong>Username:</strong> {stats.username}</p>
                         <p style={{ textAlign: 'left' }}><strong>UserID:</strong> {user?.uid}</p>
                         <hr style={{ borderColor: '#555', margin: '0.5rem 0' }} />
-                        <button
-                            style={dropdownButtonStyles}
-                            onMouseOver={e => e.currentTarget.style.background = '#333'}
-                            onMouseOut={e => e.currentTarget.style.background = '#222'}
-                            onClick={() => { setEditProfileOpen(true); setProfileDropdownOpen(false); }}
-                        >
-                            🪶 Edit Profile
-                        </button>
-                        <button
-                            style={dropdownButtonStyles}
-                            onMouseOver={e => e.currentTarget.style.background = '#333'}
-                            onMouseOut={e => e.currentTarget.style.background = '#222'}
-                            onClick={handleSignOut}
-                        >
-                            🗝️ Log Out
-                        </button>
+                        <button style={dropdownButtonStyles} onClick={() => { setEditProfileOpen(true); setProfileDropdownOpen(false); }}>🪶 Edit Profile</button>
+                        <button style={dropdownButtonStyles} onClick={handleSignOut}>🗝️ Log Out</button>
                     </div>
                 </div>
             </header>
@@ -348,7 +333,7 @@ export function Game({ user, onSignOut }) {
                 </div>
             )}
 
-            {/* Metrics Tally */}
+            {/* Metrics */}
             <div className="metrics-tally">
                 <div className="metric">
                     <span className="metric-icon">#</span>
@@ -381,7 +366,7 @@ export function Game({ user, onSignOut }) {
                     <p className="metric-value">{stats.highestStreak}</p>
                 </div>
                 <div className="metric">
-                    <span className="metric-icon"> tier</span>
+                    <span className="metric-icon">🎚️</span>
                     <p className="metric-label">Difficulty Tier:</p>
                     <p className="metric-value">{stats.difficultyTier}</p>
                 </div>
@@ -402,56 +387,30 @@ export function Game({ user, onSignOut }) {
                 </div>
             </div>
 
-            {/* The Archival Scroll (Fragment Display) */}
+
+            {/* Archival Scroll */}
             <div className="archival-scroll fragment-container">
-                <h3 className="scroll-title">The Archival Scroll (Fragment)</h3>
-                <p className="scroll-fragment fragment-text">
-                    {(gameState === 'loading' || gameState === 'error') ? "Accessing the Archival Stream..." : (currentFragment || "Press 'Start Round' to access a fragment from the Moirai Archives...")}
-                </p>
+                <h3>The Archival Scroll (Fragment)</h3>
+                <p>{(gameState === 'loading' || gameState === 'error') ? "Accessing the Archival Stream..." : (currentFragment || "Press 'Start Round' to access a fragment from the Moirai Archives...")}</p>
             </div>
 
-            {/* Classification Options / Buttons */}
+            {/* Classification Buttons */}
             {gameState === 'playing' && (
                 <div className="classification-buttons classifier">
-                    <h3 className="classifier-title">Classify the Causal Force:</h3>
-                    <div className="classifier-buttons">
-                        {classifierOptions.map(option => (
-                            <button
-                                key={option}
-                                className={`classifier-button ${userClassification === option ? 'selected' : ''}`}
-                                onClick={() => handleClassification(option)}
-                            >
-                                {option}
-                            </button>
-                        ))}
-                    </div>
+                    {classifierOptions.map(option => (
+                        <button key={option} onClick={() => handleClassification(option)}>{option}</button>
+                    ))}
                 </div>
             )}
 
-            {/* Reveal / Revelation Panel */}
+            {/* Revelation Panel */}
             {(gameState === 'revealing' || gameState === 'error') && (
                 <div className="revelation-overlay">
                     <div className="revelation-panel">
-                        <h2 className={`revelation-header ${userClassification === secretTag ? 'correct' : 'incorrect'}`}>
-                            {gameState === 'error' ? '🛑 System Interruption' : (userClassification === secretTag ? '✅ Axiom Confirmed: Correct Classification' : '❌ Axiom Error: Narrative Deception Successful')}
-                        </h2>
-
-                        <div className="revelation-text-box">
-                            <p className="revelation-focus">
-                                The <strong>True Causal Force</strong> in this Fragment was: <strong>{secretTag}</strong>
-                            </p>
-                            <hr />
-                            <p className="revelation-justification">
-                                <strong>Revelation Text:</strong> {revelationText}
-                            </p>
-                        </div>
-
-                        <button
-                            className="button-primary continue-button"
-                            onClick={() => startNewRound(stats.difficultyTier)}
-                        >
-                            Continue to Next Fragment
-                        </button>
+                        <h2>{userClassification === secretTag ? '✅ Correct' : '❌ Incorrect'}</h2>
+                        <p>The True Causal Force: {secretTag}</p>
+                        <p>Revelation Text: {revelationText}</p>
+                        <button onClick={() => startNewFragment(stats.difficultyTier)}>Continue</button>
                     </div>
                 </div>
             )}
@@ -459,7 +418,7 @@ export function Game({ user, onSignOut }) {
             {/* Ready to Start */}
             {gameState === 'ready_to_start' && (
                 <div className="start-game-section">
-                    <button className="button-primary" onClick={() => startNewRound(stats.difficultyTier)}>Start Round</button>
+                    <button onClick={() => startNewFragment(stats.difficultyTier)}>Start Round</button>
                 </div>
             )}
         </div>
