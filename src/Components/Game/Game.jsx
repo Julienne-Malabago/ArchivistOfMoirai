@@ -5,17 +5,6 @@ import { auth } from 'firebase/auth';
 import { db } from './firebase-config'; // The Firestore instance
 import { fetchFragmentFromAI } from './ai-service'; // The AI function
 
-// Define the required external functions/objects for compilation context
-// NOTE: You must ensure these are imported correctly in your actual file!
-const db = {}; 
-const doc = () => {};
-const getDoc = () => ({ exists: () => true, data: () => ({}) });
-const updateDoc = () => {};
-const auth = { EmailAuthProvider: { credential: () => ({}) }, currentUser: { email: "", reauthenticateWithCredential: () => {}, updatePassword: () => {} } };
-const fetchFragmentFromAI = async (difficulty, tag) => ({ 
-    fragmentText: "A fragment of an event is revealed...", 
-    revelationText: `The true force was ${tag}.` 
-});
 
 const GAME_SESSION_KEY = "moirai_game_session";
 
