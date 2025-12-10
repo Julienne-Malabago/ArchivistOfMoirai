@@ -3,11 +3,9 @@ import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { auth, db } from "../../firebase";
 import { fetchFragmentFromAI } from "../../api/ai";
 
-// Constant for the Session Storage key
 const GAME_SESSION_KEY = "moirai_game_session";
 
 export function Game({ user, onSignOut }) {
-    // --- Game & User Stats ---
     const [stats, setStats] = useState({
         username: 'The Archivist',
         currentScore: 0,
@@ -19,13 +17,14 @@ export function Game({ user, onSignOut }) {
         totalIncorrect: 0,
     });
 
-    const [gameState, setGameState] = useState('loading'); // 'loading', 'playing', 'revealing', 'error', 'ready_to_start'
+    const [gameState, setGameState] = useState('loading'); // loading, playing, revealing, error, ready_to_start
     const [currentFragment, setCurrentFragment] = useState("");
     const [userClassification, setUserClassification] = useState(null);
     const [secretTag, setSecretTag] = useState(null);
     const [revelationText, setRevelationText] = useState(null);
     const [errorMessage, setErrorMessage] = useState(null);
 
+    // Attempt counters
     const [attemptCount, setAttemptCount] = useState(1); // 1..5
     const [totalRoundsPlayed, setTotalRoundsPlayed] = useState(0);
     const [initialLoadComplete, setInitialLoadComplete] = useState(false);
@@ -34,7 +33,6 @@ export function Game({ user, onSignOut }) {
     const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
     const [editProfileOpen, setEditProfileOpen] = useState(false);
 
-    // --- Edit Profile ---
     const [newUsername, setNewUsername] = useState("");
     const [currentPassword, setCurrentPassword] = useState("");
     const [newPassword, setNewPassword] = useState("");
@@ -52,7 +50,6 @@ export function Game({ user, onSignOut }) {
         ? ((stats.totalCorrect / totalAttempts) * 100).toFixed(1)
         : 'N/A';
 
-    // --- Close dropdown on outside click ---
     useEffect(() => {
         const handleClickOutside = (event) => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -63,7 +60,6 @@ export function Game({ user, onSignOut }) {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    // --- Update Stats in Firestore ---
     const updateStatsInDb = useCallback(async (newStats) => {
         if (!user || !user.uid) return;
         const userDocRef = doc(db, "users", user.uid);
@@ -84,7 +80,7 @@ export function Game({ user, onSignOut }) {
         }
     }, [user, totalRoundsPlayed, attemptCount]);
 
-    // --- Load User Stats & Session ---
+    // --- Load user stats & session ---
     useEffect(() => {
         const fetchUserDataAndSession = async () => {
             setGameState('loading');
@@ -119,19 +115,17 @@ export function Game({ user, onSignOut }) {
 
             // Load session
             const storedSession = sessionStorage.getItem(GAME_SESSION_KEY);
-            let sessionFound = false;
             if (storedSession) {
                 try {
                     const sessionData = JSON.parse(storedSession);
                     if (sessionData.userId === user.uid) {
-                        sessionFound = true;
-                        setStats(prevStats => ({
-                            ...prevStats,
-                            currentScore: sessionData.currentScore ?? prevStats.currentScore,
-                            currentStreak: sessionData.currentStreak ?? prevStats.currentStreak,
-                            difficultyTier: sessionData.difficultyTier ?? prevStats.difficultyTier,
-                            highestStreak: Math.max(prevStats.highestStreak, sessionData.highestStreak || 0),
-                            highestScore: Math.max(prevStats.highestScore, sessionData.highestScore || 0),
+                        setStats(prev => ({
+                            ...prev,
+                            currentScore: sessionData.currentScore ?? prev.currentScore,
+                            currentStreak: sessionData.currentStreak ?? prev.currentStreak,
+                            difficultyTier: sessionData.difficultyTier ?? prev.difficultyTier,
+                            highestStreak: Math.max(prev.highestStreak, sessionData.highestStreak || 0),
+                            highestScore: Math.max(prev.highestScore, sessionData.highestScore || 0),
                         }));
                         setAttemptCount(sessionData.attemptCount ?? 1);
                         setTotalRoundsPlayed(sessionData.totalRoundsPlayed ?? (permanentStats.totalRoundsPlayed || 0));
@@ -150,13 +144,12 @@ export function Game({ user, onSignOut }) {
             }
 
             setInitialLoadComplete(true);
-            if (!sessionFound) setGameState('ready_to_start');
+            if (!storedSession) setGameState('ready_to_start');
         };
-
         fetchUserDataAndSession();
     }, [user, showAlert]);
 
-    // --- Persist Game State to sessionStorage ---
+    // --- Persist session ---
     useEffect(() => {
         if (user && (gameState === 'playing' || gameState === 'revealing')) {
             const sessionData = {
@@ -177,33 +170,8 @@ export function Game({ user, onSignOut }) {
         }
     }, [user, gameState, currentFragment, secretTag, revelationText, attemptCount, totalRoundsPlayed, stats]);
 
-    // --- Resume / New Session ---
-    const resumeSession = () => {
-        const storedSession = sessionStorage.getItem(GAME_SESSION_KEY);
-        if (!storedSession) { startNewGame(); return; }
-        const sessionData = JSON.parse(storedSession);
-        setCurrentFragment(sessionData.currentFragment || "");
-        setSecretTag(sessionData.secretTag || null);
-        setRevelationText(sessionData.revelationText || null);
-        setAttemptCount(sessionData.attemptCount ?? 1);
-        setTotalRoundsPlayed(sessionData.totalRoundsPlayed ?? totalRoundsPlayed);
-        setGameState(sessionData.gameState || 'ready_to_start');
-        setIsSessionActive(false);
-    };
-
-    const startNewGame = () => {
-        sessionStorage.removeItem(GAME_SESSION_KEY);
-        setStats(prev => ({ ...prev, currentScore: 0, currentStreak: 0 }));
-        setAttemptCount(1);
-        setIsSessionActive(false);
-        setGameState('ready_to_start');
-        setCurrentFragment("");
-        setSecretTag(null);
-        setRevelationText(null);
-    };
-
-    // --- Start New Round ---
-    const startNewRound = useCallback(async (currentDifficulty) => {
+    // --- Start a new round fragment ---
+    const startNewFragment = useCallback(async (currentDifficulty) => {
         if (attemptCount > 5) {
             showAlert("No Attempts Remaining", "You have used all 5 attempts. Log out to reset attempts.");
             return;
@@ -215,11 +183,6 @@ export function Game({ user, onSignOut }) {
         setRevelationText(null);
         setCurrentFragment("");
 
-        const nextAttemptCount = attemptCount;
-        setAttemptCount(nextAttemptCount);
-
-        setTotalRoundsPlayed(prev => prev + 1);
-
         const effectiveDifficulty = currentDifficulty || stats.difficultyTier;
         const randomSecretTag = classifierOptions[Math.floor(Math.random() * classifierOptions.length)];
 
@@ -229,42 +192,17 @@ export function Game({ user, onSignOut }) {
             setCurrentFragment(fragmentText);
             setRevelationText(revText);
             setGameState('playing');
-
-            const updatedStatsForDb = {
-                ...stats,
-                totalRoundsPlayed: totalRoundsPlayed + 1,
-                attemptCount: nextAttemptCount,
-            };
-            await updateStatsInDb(updatedStatsForDb);
-
-            if (user && user.uid) {
-                const sessionData = {
-                    userId: user.uid,
-                    currentFragment: fragmentText,
-                    secretTag: randomSecretTag,
-                    revelationText: revText,
-                    gameState: 'playing',
-                    attemptCount: nextAttemptCount,
-                    totalRoundsPlayed: totalRoundsPlayed + 1,
-                    currentScore: stats.currentScore,
-                    currentStreak: stats.currentStreak,
-                    difficultyTier: stats.difficultyTier,
-                    highestScore: stats.highestScore,
-                    highestStreak: stats.highestStreak,
-                };
-                sessionStorage.setItem(GAME_SESSION_KEY, JSON.stringify(sessionData));
-            }
         } catch (error) {
             console.error("Fragment generation failed:", error);
             setSecretTag("ERROR");
-            setRevelationText("Due to a system failure, the true causal force cannot be determined. Check console for details.");
+            setRevelationText("System error. True causal force unavailable.");
             setCurrentFragment("");
             setGameState('error');
             showAlert("AI Generation Error", error.message || String(error));
         }
-    }, [attemptCount, stats, totalRoundsPlayed, updateStatsInDb, user, showAlert]);
+    }, [attemptCount, stats.difficultyTier, showAlert]);
 
-    // --- Classification Handler ---
+    // --- Classification / attempt handling ---
     const handleClassification = (choice) => {
         if (gameState !== 'playing') return;
         setUserClassification(choice);
@@ -282,94 +220,49 @@ export function Game({ user, onSignOut }) {
             if (newStats.currentScore > newStats.highestScore) newStats.highestScore = newStats.currentScore;
             if (newStats.currentStreak % 5 === 0) {
                 newStats.difficultyTier += 1;
-                promotionMessage = `Archivist Promotion! Difficulty Tier is now ${newStats.difficultyTier}. Prepare for greater subtlety!`;
+                promotionMessage = `Archivist Promotion! Difficulty Tier is now ${newStats.difficultyTier}.`;
             }
         } else {
             newStats.currentStreak = 0;
             newStats.totalIncorrect += 1;
         }
 
+        // Increment attemptCount
+        const nextAttemptCount = attemptCount + 1;
+
+        // If attempts reach 5, increment totalRoundsPlayed, reset attemptCount
+        let updatedTotalRounds = totalRoundsPlayed;
+        let resetAttempt = nextAttemptCount;
+        if (nextAttemptCount > 5) {
+            updatedTotalRounds += 1;
+            resetAttempt = 1; // reset for new round
+        }
+
         setStats(newStats);
+        setAttemptCount(resetAttempt);
+        setTotalRoundsPlayed(updatedTotalRounds);
+
         updateStatsInDb({
             ...newStats,
-            attemptCount,
-            totalRoundsPlayed,
+            attemptCount: resetAttempt,
+            totalRoundsPlayed: updatedTotalRounds,
         });
+
         if (promotionMessage) showAlert("Promotion Achieved", promotionMessage);
     };
 
-    // --- Sign Out Handler ---
-    const handleSignOut = useCallback(async () => {
-        sessionStorage.removeItem(GAME_SESSION_KEY);
-        const finalStats = { ...stats, currentScore: 0, currentStreak: 0, attemptCount: 1, totalRoundsPlayed };
-        await updateStatsInDb(finalStats);
-        setAttemptCount(1);
-        setIsSessionActive(false);
-        setGameState('loading');
-        onSignOut();
-    }, [stats, onSignOut, updateStatsInDb, totalRoundsPlayed]);
-
     const displayAttemptCount = attemptCount;
 
-    // --- Dropdown styles ---
-    const dropdownStyles = {
-        position: 'absolute',
-        top: 'calc(100% + 8px)',
-        right: 0,
-        background: '#1a1a1a',
-        border: '1px solid #444',
-        borderRadius: '8px',
-        padding: '1rem',
-        minWidth: '220px',
-        zIndex: 50,
-        boxShadow: '0 4px 15px rgba(0,0,0,0.4)',
-        color: '#fff',
-        transition: 'opacity 0.25s ease, transform 0.25s ease',
-        opacity: profileDropdownOpen ? 1 : 0,
-        transform: profileDropdownOpen ? 'translateY(0)' : 'translateY(-10px)',
-        pointerEvents: profileDropdownOpen ? 'auto' : 'none'
-    };
+    return (
+        <div className="game-container">
+            {/* Render your UI here (header, fragment, buttons, metrics) */}
+            <p>Round Attempts: {displayAttemptCount} / 5</p>
+            <p>Total Rounds Completed: {totalRoundsPlayed}</p>
+            <button onClick={() => startNewFragment(stats.difficultyTier)}>Start Fragment</button>
+        </div>
+    );
+}
 
-    const dropdownButtonStyles = {
-        display: 'block',
-        width: '100%',
-        marginBottom: '0.5rem',
-        background: '#222',
-        color: '#fff',
-        border: 'none',
-        padding: '0.5rem 0.75rem',
-        borderRadius: '4px',
-        cursor: 'pointer',
-        transition: 'background 0.2s',
-    };
-
-    // --- Render ---
-    if (gameState === 'loading' && !initialLoadComplete) {
-        return (
-            <div className="game-container fullscreen-layout">
-                <div className="loading-spinner">
-                    <p>Accessing the Archives and Loading User Profile...</p>
-                </div>
-            </div>
-        );
-    }
-
-    if (isSessionActive) {
-        return (
-            <div className="game-container fullscreen-layout">
-                <div className="custom-modal-overlay">
-                    <div className="custom-modal-content session-prompt">
-                        <h3>Archival Session Detected ⏳</h3>
-                        <p>A previous game session was found for {stats.username} (Attempt {displayAttemptCount}/5).</p>
-                        <div className="button-group">
-                            <button onClick={resumeSession} className="button-primary">Resume Session</button>
-                            <button onClick={startNewGame} className="button-primary button-danger">Start New Game</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        );
-    }
 
     // --- Main Render ---
     return (
