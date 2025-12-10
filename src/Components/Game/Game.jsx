@@ -140,9 +140,8 @@ export function Game({ user, onSignOut }) {
                         setSecretTag(sessionData.secretTag || null);
                         setRevelationText(sessionData.revelationText || null);
                         setGameState(sessionData.gameState || 'ready_to_start');
-                        setIsSessionActive(false); // no modal interrupt beyond restoring session
+                        setIsSessionActive(false);
                     } else {
-                        // session belongs to a different user — remove
                         sessionStorage.removeItem(GAME_SESSION_KEY);
                     }
                 } catch (e) {
@@ -150,7 +149,6 @@ export function Game({ user, onSignOut }) {
                     sessionStorage.removeItem(GAME_SESSION_KEY);
                 }
             } else {
-                // No session — prefer attemptCount from Firestore if present, otherwise 0
                 setAttemptCount(permanentStats.attemptCount ?? 0);
             }
 
@@ -182,7 +180,7 @@ export function Game({ user, onSignOut }) {
         }
     }, [user, gameState, currentFragment, secretTag, revelationText, attemptCount, totalRoundsPlayed, stats]);
 
-    // --- Resume or Start New Session (modal choices) ---
+    // --- Resume or Start New Session ---
     const resumeSession = () => {
         const storedSession = sessionStorage.getItem(GAME_SESSION_KEY);
         if (!storedSession) { startNewGame(); return; }
@@ -208,25 +206,21 @@ export function Game({ user, onSignOut }) {
         setRevelationText(null);
     };
 
-    // --- Start New Round ---
+    // --- Start New Round (Updated with cycling attempts 1→5, rounds increment on wrap) ---
     const startNewRound = useCallback(async (currentDifficulty) => {
-        // Prevent starting beyond 5 attempts
-        if (attemptCount >= 5) {
-            showAlert("No Attempts Remaining", "You have used all 5 attempts. Log out to reset attempts or continue without starting a new round.");
-            return;
-        }
-
         setGameState('loading');
         setErrorMessage(null);
         setUserClassification(null);
         setRevelationText(null);
         setCurrentFragment("");
 
-        const nextAttemptCount = attemptCount + 1; // 0 -> 1 on first start
-        setAttemptCount(nextAttemptCount);
+        // Compute next attempt
+        const nextAttempt = attemptCount === 0 ? 1 : ((attemptCount % 5) + 1);
+        const shouldIncrementRound = nextAttempt === 1 && attemptCount !== 0;
+        const newTotalRounds = shouldIncrementRound ? totalRoundsPlayed + 1 : totalRoundsPlayed;
 
-        // Every time a round start is successful we increment totalRoundsPlayed
-        setTotalRoundsPlayed(prev => prev + 1);
+        setAttemptCount(nextAttempt);
+        setTotalRoundsPlayed(newTotalRounds);
 
         const effectiveDifficulty = currentDifficulty || stats.difficultyTier;
         const randomSecretTag = classifierOptions[Math.floor(Math.random() * classifierOptions.length)];
@@ -238,15 +232,15 @@ export function Game({ user, onSignOut }) {
             setRevelationText(revText);
             setGameState('playing');
 
-            // Persist attemptCount and totalRoundsPlayed to Firestore as part of stats
+            // Persist stats to Firestore
             const updatedStatsForDb = {
                 ...stats,
-                totalRoundsPlayed: totalRoundsPlayed + 1,
-                attemptCount: nextAttemptCount,
+                totalRoundsPlayed: newTotalRounds,
+                attemptCount: nextAttempt,
             };
             await updateStatsInDb(updatedStatsForDb);
 
-            // Persist the session to sessionStorage (user+state)
+            // Persist session
             if (user && user.uid) {
                 const sessionData = {
                     userId: user.uid,
@@ -254,8 +248,8 @@ export function Game({ user, onSignOut }) {
                     secretTag: randomSecretTag,
                     revelationText: revText,
                     gameState: 'playing',
-                    attemptCount: nextAttemptCount,
-                    totalRoundsPlayed: totalRoundsPlayed + 1,
+                    attemptCount: nextAttempt,
+                    totalRoundsPlayed: newTotalRounds,
                     currentScore: stats.currentScore,
                     currentStreak: stats.currentStreak,
                     difficultyTier: stats.difficultyTier,
@@ -302,18 +296,16 @@ export function Game({ user, onSignOut }) {
         setStats(newStats);
         updateStatsInDb({
             ...newStats,
-            attemptCount, // keep current attemptCount
+            attemptCount, 
             totalRoundsPlayed,
         });
         if (promotionMessage) showAlert("Promotion Achieved", promotionMessage);
     };
 
-    // --- Sign Out: reset attempts & clear session storage, persist reset to Firestore ---
+    // --- Sign Out Handler ---
     const handleSignOut = useCallback(async () => {
-        // remove local session
         sessionStorage.removeItem(GAME_SESSION_KEY);
 
-        // Reset ephemeral stats (score/streak) locally
         const finalStats = {
             ...stats,
             currentScore: 0,
@@ -322,16 +314,13 @@ export function Game({ user, onSignOut }) {
             totalRoundsPlayed: 0
         };
 
-        // Persist reset attemptCount and rounds to Firestore
         await updateStatsInDb(finalStats);
 
-        // Reset UI state
         setAttemptCount(0);
         setTotalRoundsPlayed(0);
         setIsSessionActive(false);
         setGameState('loading');
 
-        // call provided sign-out callback (which likely signs out from Firebase auth)
         onSignOut();
     }, [stats, onSignOut, updateStatsInDb]);
 
@@ -353,7 +342,6 @@ export function Game({ user, onSignOut }) {
             return;
         }
         try {
-            // Note: keep auth reauthentication logic outside if not configured here
             const credential = auth.EmailAuthProvider?.credential
                 ? auth.EmailAuthProvider.credential(user.email, currentPassword)
                 : null;
@@ -368,70 +356,7 @@ export function Game({ user, onSignOut }) {
         } catch (e) { console.error("Password change failed:", e); showAlert("Password Change Failed", e.message); }
     };
 
-    // displayAttemptCount now simply reflects attemptCount (0..5)
-    const displayAttemptCount = attemptCount;
-
-    // --- Dropdown styles (kept inline for animation & immediate visual) ---
-    const dropdownStyles = {
-        position: 'absolute',
-        top: 'calc(100% + 8px)',
-        right: 0,
-        background: '#1a1a1a',
-        border: '1px solid #444',
-        borderRadius: '8px',
-        padding: '1rem',
-        minWidth: '220px',
-        zIndex: 50,
-        boxShadow: '0 4px 15px rgba(0,0,0,0.4)',
-        color: '#fff',
-        transition: 'opacity 0.25s ease, transform 0.25s ease',
-        opacity: profileDropdownOpen ? 1 : 0,
-        transform: profileDropdownOpen ? 'translateY(0)' : 'translateY(-10px)',
-        pointerEvents: profileDropdownOpen ? 'auto' : 'none'
-    };
-
-    const dropdownButtonStyles = {
-        display: 'block',
-        width: '100%',
-        marginBottom: '0.5rem',
-        background: '#222',
-        color: '#fff',
-        border: 'none',
-        padding: '0.5rem 0.75rem',
-        borderRadius: '4px',
-        cursor: 'pointer',
-        transition: 'background 0.2s',
-    };
-
-    // --- Render Logic ---
-    if (gameState === 'loading' && !initialLoadComplete) {
-        return (
-            <div className="game-container fullscreen-layout">
-                <div className="loading-spinner">
-                    <p>Accessing the Archives and Loading User Profile...</p>
-                </div>
-            </div>
-        );
-    }
-
-    // Session modal from original code (kept). Only shown if a previous session exists AND isSessionActive is true.
-    if (isSessionActive) {
-        return (
-            <div className="game-container fullscreen-layout">
-                <div className="custom-modal-overlay">
-                    <div className="custom-modal-content session-prompt">
-                        <h3>Archival Session Detected ⏳</h3>
-                        <p>A previous game session was found for {stats.username} (Attempt {displayAttemptCount}/5).</p>
-                        <p>Would you like to resume, or start a new game (resetting current score and streak)?</p>
-                        <div className="button-group">
-                            <button onClick={resumeSession} className="button-primary">Resume Session</button>
-                            <button onClick={startNewGame} className="button-primary button-danger">Start New Game</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        );
-    }
+    const displayAttemptCount = attemptCount; // UI shows 1–5 correctly
 
     // --- Main Render ---
     return (
