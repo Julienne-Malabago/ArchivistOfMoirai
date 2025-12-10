@@ -26,7 +26,8 @@ export function Game({ user, onSignOut }) {
     const [revelationText, setRevelationText] = useState(null);
     const [errorMessage, setErrorMessage] = useState(null);
 
-    const [attemptCount, setAttemptCount] = useState(0);
+    // Attempt counters and session state
+    const [attemptCount, setAttemptCount] = useState(0); // 0..5
     const [totalRoundsPlayed, setTotalRoundsPlayed] = useState(0);
     const [initialLoadComplete, setInitialLoadComplete] = useState(false);
     const [isSessionActive, setIsSessionActive] = useState(false);
@@ -63,38 +64,7 @@ export function Game({ user, onSignOut }) {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    // --- Start New Round ---
-    const startNewRound = useCallback(async (currentDifficulty) => {
-        setGameState('loading');
-        setErrorMessage(null);
-        setUserClassification(null);
-        setRevelationText(null);
-        setCurrentFragment("");
-
-        const nextAttemptCount = (attemptCount + 1) % 5;
-        if (nextAttemptCount === 0) setTotalRoundsPlayed(prev => prev + 1);
-        setAttemptCount(nextAttemptCount);
-
-        const effectiveDifficulty = currentDifficulty || stats.difficultyTier;
-        const randomSecretTag = classifierOptions[Math.floor(Math.random() * classifierOptions.length)];
-
-        try {
-            const { fragmentText, revelationText: revText } = await fetchFragmentFromAI(effectiveDifficulty, randomSecretTag);
-            setSecretTag(randomSecretTag);
-            setCurrentFragment(fragmentText);
-            setRevelationText(revText);
-            setGameState('playing');
-        } catch (error) {
-            console.error("Fragment generation failed:", error);
-            setSecretTag("ERROR");
-            setRevelationText("Due to a system failure, the true causal force cannot be determined. Check console for details.");
-            setCurrentFragment("");
-            setGameState('error');
-            showAlert("AI Generation Error", error.message || String(error));
-        }
-    }, [stats.difficultyTier, attemptCount, showAlert]);
-
-    // --- Update Stats in Firestore ---
+    // --- Update Stats in Firestore (includes attemptCount & totalRoundsPlayed) ---
     const updateStatsInDb = useCallback(async (newStats) => {
         if (!user || !user.uid) return;
         const userDocRef = doc(db, "users", user.uid);
@@ -105,14 +75,15 @@ export function Game({ user, onSignOut }) {
                 highestStreak: newStats.highestStreak,
                 difficultyTier: newStats.difficultyTier,
                 highestScore: newStats.highestScore,
-                totalRoundsPlayed,
+                totalRoundsPlayed: newStats.totalRoundsPlayed ?? totalRoundsPlayed,
                 totalCorrect: newStats.totalCorrect,
                 totalIncorrect: newStats.totalIncorrect,
+                attemptCount: newStats.attemptCount ?? attemptCount,
             });
         } catch (error) {
             console.error("Error updating stats in Firestore:", error);
         }
-    }, [user, totalRoundsPlayed]);
+    }, [user, totalRoundsPlayed, attemptCount]);
 
     // --- Load User Stats & Session ---
     useEffect(() => {
@@ -146,6 +117,7 @@ export function Game({ user, onSignOut }) {
                 return;
             }
 
+            // Load session from sessionStorage if it matches the user
             const storedSession = sessionStorage.getItem(GAME_SESSION_KEY);
             let sessionFound = false;
             if (storedSession) {
@@ -153,24 +125,33 @@ export function Game({ user, onSignOut }) {
                     const sessionData = JSON.parse(storedSession);
                     if (sessionData.userId === user.uid) {
                         sessionFound = true;
+                        // restore session values (including attemptCount)
                         setStats(prevStats => ({
                             ...prevStats,
-                            currentScore: sessionData.currentScore,
-                            currentStreak: sessionData.currentStreak,
-                            difficultyTier: sessionData.difficultyTier,
-                            highestStreak: Math.max(permanentStats.highestStreak || 0, sessionData.highestStreak),
-                            highestScore: Math.max(permanentStats.highestScore || 0, sessionData.highestScore),
+                            currentScore: sessionData.currentScore ?? prevStats.currentScore,
+                            currentStreak: sessionData.currentStreak ?? prevStats.currentStreak,
+                            difficultyTier: sessionData.difficultyTier ?? prevStats.difficultyTier,
+                            highestStreak: Math.max(permanentStats.highestStreak || 0, sessionData.highestStreak || 0),
+                            highestScore: Math.max(permanentStats.highestScore || 0, sessionData.highestScore || 0),
                         }));
-                        setAttemptCount(sessionData.attemptCount);
-                        setTotalRoundsPlayed(sessionData.totalRoundsPlayed);
-                        setIsSessionActive(true);
+                        setAttemptCount(sessionData.attemptCount ?? 0);
+                        setTotalRoundsPlayed(sessionData.totalRoundsPlayed ?? (permanentStats.totalRoundsPlayed || 0));
+                        setCurrentFragment(sessionData.currentFragment || "");
+                        setSecretTag(sessionData.secretTag || null);
+                        setRevelationText(sessionData.revelationText || null);
+                        setGameState(sessionData.gameState || 'ready_to_start');
+                        setIsSessionActive(false); // no modal interrupt beyond restoring session
                     } else {
+                        // session belongs to a different user — remove
                         sessionStorage.removeItem(GAME_SESSION_KEY);
                     }
                 } catch (e) {
                     console.error("Error parsing session data:", e);
                     sessionStorage.removeItem(GAME_SESSION_KEY);
                 }
+            } else {
+                // No session — prefer attemptCount from Firestore if present, otherwise 0
+                setAttemptCount(permanentStats.attemptCount ?? 0);
             }
 
             setInitialLoadComplete(true);
@@ -180,7 +161,7 @@ export function Game({ user, onSignOut }) {
         fetchUserDataAndSession();
     }, [user, showAlert]);
 
-    // --- Persist Game State ---
+    // --- Persist Game State to sessionStorage while playing or revealing ---
     useEffect(() => {
         if (user && (gameState === 'playing' || gameState === 'revealing')) {
             const sessionData = {
@@ -201,15 +182,17 @@ export function Game({ user, onSignOut }) {
         }
     }, [user, gameState, currentFragment, secretTag, revelationText, attemptCount, totalRoundsPlayed, stats]);
 
-    // --- Resume or Start New Session ---
+    // --- Resume or Start New Session (modal choices) ---
     const resumeSession = () => {
         const storedSession = sessionStorage.getItem(GAME_SESSION_KEY);
         if (!storedSession) { startNewGame(); return; }
         const sessionData = JSON.parse(storedSession);
-        setCurrentFragment(sessionData.currentFragment);
-        setSecretTag(sessionData.secretTag);
-        setRevelationText(sessionData.revelationText);
-        setGameState(sessionData.gameState);
+        setCurrentFragment(sessionData.currentFragment || "");
+        setSecretTag(sessionData.secretTag || null);
+        setRevelationText(sessionData.revelationText || null);
+        setAttemptCount(sessionData.attemptCount ?? 0);
+        setTotalRoundsPlayed(sessionData.totalRoundsPlayed ?? totalRoundsPlayed);
+        setGameState(sessionData.gameState || 'ready_to_start');
         setIsSessionActive(false);
     };
 
@@ -220,7 +203,76 @@ export function Game({ user, onSignOut }) {
         setInitialLoadComplete(true);
         setIsSessionActive(false);
         setGameState('ready_to_start');
+        setCurrentFragment("");
+        setSecretTag(null);
+        setRevelationText(null);
     };
+
+    // --- Start New Round ---
+    const startNewRound = useCallback(async (currentDifficulty) => {
+        // Prevent starting beyond 5 attempts
+        if (attemptCount >= 5) {
+            showAlert("No Attempts Remaining", "You have used all 5 attempts. Log out to reset attempts or continue without starting a new round.");
+            return;
+        }
+
+        setGameState('loading');
+        setErrorMessage(null);
+        setUserClassification(null);
+        setRevelationText(null);
+        setCurrentFragment("");
+
+        const nextAttemptCount = attemptCount + 1; // 0 -> 1 on first start
+        setAttemptCount(nextAttemptCount);
+
+        // Every time a round start is successful we increment totalRoundsPlayed
+        setTotalRoundsPlayed(prev => prev + 1);
+
+        const effectiveDifficulty = currentDifficulty || stats.difficultyTier;
+        const randomSecretTag = classifierOptions[Math.floor(Math.random() * classifierOptions.length)];
+
+        try {
+            const { fragmentText, revelationText: revText } = await fetchFragmentFromAI(effectiveDifficulty, randomSecretTag);
+            setSecretTag(randomSecretTag);
+            setCurrentFragment(fragmentText);
+            setRevelationText(revText);
+            setGameState('playing');
+
+            // Persist attemptCount and totalRoundsPlayed to Firestore as part of stats
+            const updatedStatsForDb = {
+                ...stats,
+                totalRoundsPlayed: totalRoundsPlayed + 1,
+                attemptCount: nextAttemptCount,
+            };
+            await updateStatsInDb(updatedStatsForDb);
+
+            // Persist the session to sessionStorage (user+state)
+            if (user && user.uid) {
+                const sessionData = {
+                    userId: user.uid,
+                    currentFragment: fragmentText,
+                    secretTag: randomSecretTag,
+                    revelationText: revText,
+                    gameState: 'playing',
+                    attemptCount: nextAttemptCount,
+                    totalRoundsPlayed: totalRoundsPlayed + 1,
+                    currentScore: stats.currentScore,
+                    currentStreak: stats.currentStreak,
+                    difficultyTier: stats.difficultyTier,
+                    highestScore: stats.highestScore,
+                    highestStreak: stats.highestStreak,
+                };
+                sessionStorage.setItem(GAME_SESSION_KEY, JSON.stringify(sessionData));
+            }
+        } catch (error) {
+            console.error("Fragment generation failed:", error);
+            setSecretTag("ERROR");
+            setRevelationText("Due to a system failure, the true causal force cannot be determined. Check console for details.");
+            setCurrentFragment("");
+            setGameState('error');
+            showAlert("AI Generation Error", error.message || String(error));
+        }
+    }, [attemptCount, stats, totalRoundsPlayed, updateStatsInDb, user, showAlert]);
 
     // --- Classification Handler ---
     const handleClassification = (choice) => {
@@ -248,17 +300,38 @@ export function Game({ user, onSignOut }) {
         }
 
         setStats(newStats);
-        updateStatsInDb(newStats);
+        updateStatsInDb({
+            ...newStats,
+            attemptCount, // keep current attemptCount
+            totalRoundsPlayed,
+        });
         if (promotionMessage) showAlert("Promotion Achieved", promotionMessage);
     };
 
-    // --- Sign Out ---
+    // --- Sign Out: reset attempts & clear session storage, persist reset to Firestore ---
     const handleSignOut = useCallback(async () => {
+        // remove local session
         sessionStorage.removeItem(GAME_SESSION_KEY);
-        const finalStats = { ...stats, currentScore: 0, currentStreak: 0 };
+
+        // Reset ephemeral stats (score/streak) locally
+        const finalStats = {
+            ...stats,
+            currentScore: 0,
+            currentStreak: 0,
+            attemptCount: 0,
+            totalRoundsPlayed: 0
+        };
+
+        // Persist reset attemptCount and rounds to Firestore
         await updateStatsInDb(finalStats);
+
+        // Reset UI state
         setAttemptCount(0);
         setTotalRoundsPlayed(0);
+        setIsSessionActive(false);
+        setGameState('loading');
+
+        // call provided sign-out callback (which likely signs out from Firebase auth)
         onSignOut();
     }, [stats, onSignOut, updateStatsInDb]);
 
@@ -280,8 +353,11 @@ export function Game({ user, onSignOut }) {
             return;
         }
         try {
-            // Reauthenticate first (this uses the pattern you had in your code)
-            const credential = auth.EmailAuthProvider.credential(user.email, currentPassword);
+            // Note: keep auth reauthentication logic outside if not configured here
+            const credential = auth.EmailAuthProvider?.credential
+                ? auth.EmailAuthProvider.credential(user.email, currentPassword)
+                : null;
+            if (!credential) throw new Error("Reauthentication method unavailable.");
             await auth.currentUser.reauthenticateWithCredential(credential);
             await auth.currentUser.updatePassword(newPassword);
             setCurrentPassword("");
@@ -292,7 +368,8 @@ export function Game({ user, onSignOut }) {
         } catch (e) { console.error("Password change failed:", e); showAlert("Password Change Failed", e.message); }
     };
 
-    const displayAttemptCount = attemptCount === 0 ? 5 : attemptCount;
+    // displayAttemptCount now simply reflects attemptCount (0..5)
+    const displayAttemptCount = attemptCount;
 
     // --- Dropdown styles (kept inline for animation & immediate visual) ---
     const dropdownStyles = {
@@ -327,7 +404,6 @@ export function Game({ user, onSignOut }) {
     };
 
     // --- Render Logic ---
-
     if (gameState === 'loading' && !initialLoadComplete) {
         return (
             <div className="game-container fullscreen-layout">
@@ -338,7 +414,7 @@ export function Game({ user, onSignOut }) {
         );
     }
 
-    // Session modal from original code (kept)
+    // Session modal from original code (kept). Only shown if a previous session exists AND isSessionActive is true.
     if (isSessionActive) {
         return (
             <div className="game-container fullscreen-layout">
