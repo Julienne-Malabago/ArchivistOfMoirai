@@ -594,3 +594,4 @@ export function Game({ user, onSignOut }) {
         </div>
     );
 }
+                  }
