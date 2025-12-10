@@ -558,7 +558,3 @@ export function Game({ user, onSignOut }) {
         </div>
     );
 }
-
-
-
-I also want you to fix the problem with the round attempts count. when logging in let it be 0/5 and when player clicks start round keep logic as is starting at 1/5
