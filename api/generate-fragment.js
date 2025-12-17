@@ -1,7 +1,7 @@
 // api/generate-fragment.js
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 
-const MODEL_NAME = "gemini-2.0-flash"; // Current recommended model
+const MODEL_NAME = "gemini-2.0-flash";
 
 // --- Helper: Parse AI Response ---
 function parseAIResponse(raw) {
@@ -43,18 +43,15 @@ export default async function handler(req, res) {
         });
     }
 
-    try {
-        // FIX: Initialize the SDK correctly
-        // The constructor takes the API Key as a direct string: new GoogleGenerativeAI("YOUR_KEY")
-        const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({ model: MODEL_NAME });
+    // Initialize using the @google/genai pattern
+    const genAI = new GoogleGenAI({ apiKey });
 
-        const isStoryMode = contextHistory.length > 0;
-        const historyText = isStoryMode 
-            ? `\nSTORY CONTEXT (Previous Events):\n${contextHistory.map((text, i) => `Part ${i+1}: ${text}`).join('\n')}\n`
-            : "";
+    const isStoryMode = contextHistory.length > 0;
+    const historyText = isStoryMode 
+        ? `\nSTORY CONTEXT (Previous Events):\n${contextHistory.map((text, i) => `Part ${i+1}: ${text}`).join('\n')}\n`
+        : "";
 
-        const prompt = `
+    const prompt = `
 You are the Archivist of Moirai.
 
 Generate a short narrative fragment (100–150 words) in the following setting:
@@ -64,7 +61,7 @@ Secret Causal Force (SECRET_TAG): ${secretTag}
 Difficulty Tier: ${difficultyTier}
 
 Rules:
-- ${isStoryMode ? "CONTINUATION: You MUST follow the plot and characters established in the STORY CONTEXT." : "STANDALONE: Create a new, unique scenario."}
+- ${isStoryMode ? "CONTINUATION: Follow the plot and characters established in the STORY CONTEXT." : "STANDALONE: Create a new scenario."}
 - The fragment must fit the specified GENRE perfectly.
 - Subtly embed the causal force (${secretTag}).
 - Tone and complexity must match the difficulty tier.
@@ -78,16 +75,19 @@ Return ONLY a valid JSON object in this exact format:
 }
 `;
 
-        const result = await model.generateContent({
+    try {
+        // Use the .models.generateContent method for the @google/genai SDK
+        const response = await genAI.models.generateContent({
+            model: MODEL_NAME,
             contents: [{ role: "user", parts: [{ text: prompt }] }],
-            generationConfig: { 
+            config: { 
                 temperature: 0.8,
                 responseMimeType: "application/json" 
             }
         });
 
-        // Extract text from the result
-        const rawText = result.response.text();
+        // Extract text from the response object
+        const rawText = response.text;
         const data = parseAIResponse(rawText);
 
         if (!data.fragmentText || !data.revelationText) {
