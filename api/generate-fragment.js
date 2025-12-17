@@ -1,12 +1,10 @@
 // api/generate-fragment.js
 import { GoogleGenAI } from "@google/genai";
 
-const MODEL_NAME = "gemini-2.5-flash";
+const MODEL_NAME = "gemini-2.0-flash"; // Standard naming, update if using a specific preview
 
-// --- Helper: Attempt strict parse first, fallback to cleaned JSON ---
 function parseAIResponse(raw) {
     if (!raw) throw new Error("Empty AI response");
-
     try {
         return JSON.parse(raw);
     } catch {
@@ -18,53 +16,50 @@ function parseAIResponse(raw) {
     }
 }
 
-// --- Serverless Handler ---
 export default async function handler(req, res) {
     if (req.method !== "POST") {
-        return res.status(405).json({ 
-            errorType: "MethodNotAllowed", 
-            errorMessage: "Only POST requests are allowed." 
-        });
+        return res.status(405).json({ errorType: "MethodNotAllowed", errorMessage: "Only POST requests are allowed." });
     }
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-        return res.status(500).json({ 
-            errorType: "MissingAPIKey", 
-            errorMessage: "GEMINI_API_KEY is missing from environment variables." 
-        });
+        return res.status(500).json({ errorType: "MissingAPIKey", errorMessage: "GEMINI_API_KEY is missing." });
     }
 
-    // Extract genre from request body
-    const { secretTag, difficultyTier, genre } = req.body;
+    // contextHistory will be an array of previous strings
+    const { secretTag, difficultyTier, genre, contextHistory = [] } = req.body;
     
     if (!secretTag || difficultyTier === undefined) {
-        return res.status(400).json({ 
-            errorType: "InvalidRequest", 
-            errorMessage: "Missing required fields: secretTag or difficultyTier." 
-        });
+        return res.status(400).json({ errorType: "InvalidRequest", errorMessage: "Missing secretTag or difficultyTier." });
     }
 
-    const genAI = new GoogleGenAI({ apiKey });
+    const genAI = new GoogleGenAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: MODEL_NAME });
 
-    // Injected genre into the prompt instructions
+    // Determine if we are in Story Mode based on if context exists
+    const isStoryMode = contextHistory.length > 0;
+    const historyText = isStoryMode 
+        ? `\nSTORY CONTEXT (Previous Events):\n${contextHistory.map((text, i) => `Part ${i+1}: ${text}`).join('\n')}\n`
+        : "";
+
     const prompt = `
-You are the Archivist of Moirai.
+You are the Archivist of Moirai. 
 
 Generate a short narrative fragment (100–150 words) in the following setting:
 GENRE: ${genre || "Random"}
-
+${historyText}
 Secret Causal Force (SECRET_TAG): ${secretTag}
 Difficulty Tier: ${difficultyTier}
 
 Rules:
+- ${isStoryMode ? "This is a CONTINUATION. You must follow the characters, plot, and tone established in the STORY CONTEXT above." : "This is a STANDALONE fragment."}
 - The fragment must fit the specified GENRE perfectly.
-- The fragment must subtly embed the causal force (${secretTag}).
-- Tone and complexity must match the difficulty tier.
-- Do NOT explain the secret directly in the fragment.
-- Provide a brief revelation explaining how the causal force was at work.
+- Subtly embed the causal force (${secretTag}) into the narrative.
+- Tone and complexity must match Difficulty Tier ${difficultyTier}.
+- Do NOT explain the secret directly in the fragment text.
+- Provide a brief revelation (revelationText) explaining how ${secretTag} was the hidden driver of this specific fragment.
 
-Return ONLY a valid JSON object in this exact format:
+Return ONLY a valid JSON object:
 {
   "fragmentText": "string",
   "revelationText": "string"
@@ -72,21 +67,16 @@ Return ONLY a valid JSON object in this exact format:
 `;
 
     try {
-        const response = await genAI.models.generateContent({
-            model: MODEL_NAME,
+        const result = await model.generateContent({
             contents: [{ role: "user", parts: [{ text: prompt }] }],
-            config: { 
+            generationConfig: { 
                 temperature: 0.8,
-                // Forces the model to output a valid JSON object
                 responseMimeType: "application/json" 
             }
         });
 
-        // Gemini 2.5 Flash SDK structure check
-        const rawText = response.text;
-        console.log("GEMINI RAW RESPONSE:", rawText);
-
-        const data = parseAIResponse(rawText);
+        const response = await result.response;
+        const data = parseAIResponse(response.text());
 
         if (!data.fragmentText || !data.revelationText) {
             throw new Error("AI returned JSON missing required keys");
@@ -96,16 +86,6 @@ Return ONLY a valid JSON object in this exact format:
 
     } catch (err) {
         console.error("ARCHIVIST AI ERROR:", err);
-
-        if (err?.error) {
-            const aiError = err.error;
-            return res.status(err.status || 500).json({
-                errorType: aiError.code || "ApiError",
-                errorMessage: aiError.message || "AI returned an error",
-                details: aiError.details || null
-            });
-        }
-
         return res.status(500).json({
             errorType: err.name || "UnknownError",
             errorMessage: err.message || "An unknown error occurred"
