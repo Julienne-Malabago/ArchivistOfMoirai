@@ -1,123 +1,81 @@
-// api/generate-fragment.js — Vercel Serverless Function
-// =====================================================
-
-// --- IMPORTS ---
-// Full dotenv import for explicit configuration
 import { GoogleGenAI } from "@google/genai";
 import * as dotenv from "dotenv";
 
-// Explicitly load environment variables from .env in current working directory
 dotenv.config();
 
-// --- CONSTANTS ---
-const MODEL_NAME = "gemini-2.5-flash"; // The GenAI model to use
+const MODEL_NAME = "gemini-2.5-flash";
 
-// --- HELPER FUNCTION ---
-// Extract JSON object from a text string
-function extractJson(text) {
-    try {
-        const start = text.indexOf("{");
-        const end = text.lastIndexOf("}") + 1;
-        if (start !== -1 && end !== -1 && start < end) {
-            const jsonString = text.substring(start, end);
-            return JSON.parse(jsonString);
-        }
-    } catch (err) {
-        console.error("Failed to parse JSON string:", text, err);
-    }
-    return null;
-}
-
-// --- SERVERLESS HANDLER ---
 export default async function handler(req, res) {
-    // --- METHOD CHECK ---
+
     if (req.method !== "POST") {
-        return res.status(405).json({ error: "Method Not Allowed. Only POST is supported." });
+        return res.status(405).json({ error: "POST only" });
     }
 
-    // --- API KEY VALIDATION ---
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-        console.error("CRITICAL: GEMINI_API_KEY is not set in .env");
-        return res.status(500).json({
-            error: "Server configuration error: GEMINI_API_KEY is missing."
-        });
+        return res.status(500).json({ error: "Missing API Key" });
     }
 
-    // --- INITIALIZE GENAI CLIENT ---
     const genai = new GoogleGenAI({ apiKey });
 
-    // --- REQUEST BODY VALIDATION ---
-    const { secretTag, difficultyTier } = req.body;
-    if (!secretTag || !difficultyTier) {
+    // 🆕 RECEIVE GENRE
+    const { secretTag, difficultyTier, genre } = req.body;
+
+    if (!secretTag || !difficultyTier || !genre) {
         return res.status(400).json({
-            error: "Missing required fields: secretTag or difficultyTier"
+            error: "Missing secretTag, difficultyTier, or genre"
         });
     }
 
-    // --- DEFINE JSON SCHEMA ---
-    // Constrains the AI output to a strict JSON format
     const JSON_SCHEMA = {
         type: "object",
         properties: {
-            fragmentText: {
-                type: "string",
-                description: "A short narrative fragment of about 100–150 words."
-            },
-            revelationText: {
-                type: "string",
-                description: "A concise explanation (1–2 sentences) of the Causal Force (SECRET_TAG) embedded in the fragment."
-            }
+            fragmentText: { type: "string" },
+            revelationText: { type: "string" }
         },
         required: ["fragmentText", "revelationText"]
     };
 
-    // --- PROMPT CONSTRUCTION ---
-    // Gives the AI clear instructions for output and style
+    // 🆕 GENRE-AWARE PROMPT
     const prompt = `
-        You are the Archivist of Moirai, a narrative AI.
-        Your task is to generate a short story fragment based on a Difficulty Tier, 
-        subtly embedding a Causal Force as SECRET_TAG.
+You are the Archivist of Moirai.
 
-        **Instructions:**
-        1. The fragment must be subtle and engaging.
-        2. SECRET_TAG: ${secretTag}.
-        3. Difficulty Tier: ${difficultyTier}. Adjust subtlety and complexity accordingly.
-        4. Output MUST be a JSON object following the provided JSON schema ONLY. 
-           No extra text, markdown, or explanations outside the JSON.
-    `;
+Generate a short story fragment (100–150 words).
+
+Rules:
+- Genre: ${genre === "Random" ? "Choose an appropriate genre randomly." : genre}
+- Secret Causal Force: ${secretTag}
+- Difficulty Tier: ${difficultyTier}
+
+Genre should influence:
+- Tone
+- Setting
+- Tropes
+- Emotional beats
+
+The causal force must be subtle.
+
+Return ONLY valid JSON matching the schema.
+`;
 
     try {
-        // --- CALL GENAI API ---
         const response = await genai.models.generateContent({
             model: MODEL_NAME,
             contents: prompt,
             config: {
                 responseMimeType: "application/json",
                 responseSchema: JSON_SCHEMA,
-                temperature: 0.8,
+                temperature: 0.85,
             }
         });
 
-        // --- PARSE AI RESPONSE ---
-        const jsonText = response.text.trim();
-        const data = extractJson(jsonText);
-
-        // --- VALIDATE PARSED JSON ---
-        if (data && data.fragmentText && data.revelationText) {
-            return res.status(200).json(data);
-        } else {
-            console.error("Invalid AI JSON output:", jsonText);
-            return res.status(500).json({
-                error: "AI response was invalid or could not be parsed."
-            });
-        }
+        const data = JSON.parse(response.text.trim());
+        return res.status(200).json(data);
 
     } catch (err) {
-        // --- ERROR HANDLING ---
-        console.error("GenAI API Error:", err);
+        console.error("GenAI error:", err);
         return res.status(500).json({
-            error: `GenAI API call failed: ${err.message}`
+            error: `AI generation failed: ${err.message}`
         });
     }
 }
