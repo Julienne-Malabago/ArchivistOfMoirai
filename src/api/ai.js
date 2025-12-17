@@ -36,9 +36,10 @@ const exponentialBackoffFetch = async (url, options, retries = 3) => {
  * @param {number} difficultyTier The current game difficulty.
  * @param {AxiomTag} secretTag The true causal force to embed.
  * @param {string} genre The selected narrative setting (e.g., 'Noir', 'Sci-Fi').
+ * @param {Array<string>} contextHistory Previous fragments in the current round for continuity.
  * @returns {Promise<{fragmentText: string, revelationText: string}>}
  */
-export async function fetchFragmentFromAI(difficultyTier, secretTag, genre) {
+export async function fetchFragmentFromAI(difficultyTier, secretTag, genre, contextHistory = []) {
     
     try {
         const response = await exponentialBackoffFetch(API_ENDPOINT, {
@@ -49,7 +50,8 @@ export async function fetchFragmentFromAI(difficultyTier, secretTag, genre) {
             body: JSON.stringify({
                 secretTag: secretTag,
                 difficultyTier: difficultyTier,
-                genre: genre, // This ensures the backend receives the user's choice
+                genre: genre,
+                contextHistory: contextHistory, // Passes the narrative history to the backend
             }),
         });
 
