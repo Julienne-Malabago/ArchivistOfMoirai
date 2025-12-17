@@ -26,22 +26,29 @@ export function Game({ user, onSignOut }) {
     const [revelationText, setRevelationText] = useState(null);
     const [errorMessage, setErrorMessage] = useState(null);
 
-    // attemptCount is 0-indexed (0 to 4) for the 5 attempts in a round.
     const [attemptCount, setAttemptCount] = useState(0); 
     const [totalRoundsPlayed, setTotalRoundsPlayed] = useState(0);
     const [initialLoadComplete, setInitialLoadComplete] = useState(false);
     const [isSessionActive, setIsSessionActive] = useState(false);
 
+    // Genre State
+    const [selectedGenre, setSelectedGenre] = useState("Random");
+
     const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
     const [editProfileOpen, setEditProfileOpen] = useState(false);
 
-    // --- Edit Profile ---
+    // Edit Profile Fields
     const [newUsername, setNewUsername] = useState("");
     const [currentPassword, setCurrentPassword] = useState("");
     const [newPassword, setNewPassword] = useState("");
     const [confirmNewPassword, setConfirmNewPassword] = useState("");
 
     const classifierOptions = ['FATE', 'CHOICE', 'CHANCE'];
+    const genreOptions = [
+        "Random", "Romance", "Mystery", "Fantasy", 
+        "Sci-Fi", "Horror", "Historical", "Slice of Life"
+    ];
+
     const dropdownRef = useRef(null);
 
     const showAlert = useCallback((title, message) => {
@@ -51,10 +58,8 @@ export function Game({ user, onSignOut }) {
     const totalAttempts = stats.totalCorrect + stats.totalIncorrect;
     const accuracyRate = totalAttempts > 0
         ? ((stats.totalCorrect / totalAttempts) * 100).toFixed(1)
-        : 'N/A';
+        : '0.0';
 
-    // **FIX 1: Corrected Display Attempt Count Logic**
-    // 0 -> 1, 1 -> 2, ..., 4 -> 5. This resolves the NAN/5 display issue.
     const displayAttemptCount = attemptCount + 1; 
 
     // --- Close dropdown on outside click ---
@@ -69,7 +74,6 @@ export function Game({ user, onSignOut }) {
     }, []);
 
     // --- Update Stats in Firestore ---
-    // **FIX 2: Passed totalRoundsPlayed as an argument for accurate update**
     const updateStatsInDb = useCallback(async (newStats, roundsPlayed) => {
         if (!user || !user.uid) return;
         const userDocRef = doc(db, "users", user.uid);
@@ -80,16 +84,16 @@ export function Game({ user, onSignOut }) {
                 highestStreak: newStats.highestStreak,
                 difficultyTier: newStats.difficultyTier,
                 highestScore: newStats.highestScore,
-                totalRoundsPlayed: roundsPlayed, // Use the passed argument
+                totalRoundsPlayed: roundsPlayed,
                 totalCorrect: newStats.totalCorrect,
                 totalIncorrect: newStats.totalIncorrect,
             });
         } catch (error) {
             console.error("Error updating stats in Firestore:", error);
         }
-    }, [user]); // Removed totalRoundsPlayed from dependencies to avoid stale closures, using argument instead.
+    }, [user]);
 
-    // --- Start New Round ---
+    // --- Start New Round / Next Fragment ---
     const startNewRound = useCallback(async (currentDifficulty) => {
         setGameState('loading');
         setErrorMessage(null);
@@ -101,105 +105,70 @@ export function Game({ user, onSignOut }) {
         const randomSecretTag = classifierOptions[Math.floor(Math.random() * classifierOptions.length)];
     
         try {
-            // --- 1. CALL API ---
-            // This is the only line that can fail due to the 503 error
-            const { fragmentText, revelationText: revText } = await fetchFragmentFromAI(effectiveDifficulty, randomSecretTag);
+            const { fragmentText, revelationText: revText } = await fetchFragmentFromAI(
+                effectiveDifficulty, 
+                randomSecretTag,
+                selectedGenre
+            );
     
-            // --- 2. SUCCESS: Apply State Updates (Only if API call succeeds) ---
-            
-            // Calculate next attempt count (0 to 4 cycle)
             const nextAttemptCount = attemptCount === 4 ? 0 : attemptCount + 1;
             
-            // **FIX IMPLEMENTED HERE:**
-            // Set state only upon successful fragment generation.
             setAttemptCount(nextAttemptCount);
             if (nextAttemptCount === 0) {
-                // Increment total rounds only when a full 5-attempt round cycle starts
                 setTotalRoundsPlayed(prev => prev + 1);
             }
     
-            // Set the new game data
             setSecretTag(randomSecretTag);
             setCurrentFragment(fragmentText);
             setRevelationText(revText);
             setGameState('playing');
             
         } catch (error) {
-            // --- 3. FAILURE: Do NOT Apply State Updates ---
-            // attemptCount and totalRoundsPlayed remain at their previous values.
             console.error("Fragment generation failed:", error);
-            setSecretTag("ERROR");
-            setRevelationText("Due to a system failure, the true causal force cannot be determined. Check console for details.");
-            setCurrentFragment("");
             setGameState('error');
-            // This will display the button to retry, which re-runs this function
-            // without counting the failed attempt.
-            showAlert("AI Generation Error", error.message || String(error));
+            showAlert("AI Generation Error", error.message || "Failed to generate fragment.");
         }
-    }, [stats.difficultyTier, attemptCount, showAlert, classifierOptions]);
+    }, [stats.difficultyTier, attemptCount, selectedGenre, showAlert]);
 
     // --- Load User Stats & Session ---
     useEffect(() => {
         const fetchUserDataAndSession = async () => {
-            setGameState('loading');
             if (!user) return;
-
             const userDocRef = doc(db, "users", user.uid);
             let permanentStats = {};
             let sessionFound = false;
             
-            // 1. Fetch Permanent Stats from DB
             try {
                 const docSnap = await getDoc(userDocRef);
                 if (docSnap.exists()) {
                     permanentStats = docSnap.data();
-                    const dbRoundsPlayed = permanentStats.totalRoundsPlayed || 0;
-                    setTotalRoundsPlayed(dbRoundsPlayed);
-                    
+                    setTotalRoundsPlayed(permanentStats.totalRoundsPlayed || 0);
                     setStats(s => ({
                         ...s,
                         username: permanentStats.username || 'The Archivist',
-                        currentScore: 0,
-                        currentStreak: 0,
                         highestStreak: permanentStats.highestStreak || 0,
                         difficultyTier: permanentStats.difficultyTier || 1,
                         highestScore: permanentStats.highestScore || 0,
                         totalCorrect: permanentStats.totalCorrect || 0,
                         totalIncorrect: permanentStats.totalIncorrect || 0,
                     }));
-                    setAttemptCount(0); // Reset attempt count on initial load/login
                 }
             } catch (error) {
                 console.error("Error fetching user data:", error);
-                showAlert("Data Error", "Could not load user progress from the Archives.");
                 setGameState('error');
                 setInitialLoadComplete(true);
                 return;
             }
 
-            // 2. Check Session Storage
             const storedSession = sessionStorage.getItem(GAME_SESSION_KEY);
             if (storedSession) {
                 try {
                     const sessionData = JSON.parse(storedSession);
                     if (sessionData.userId === user.uid) {
                         sessionFound = true;
-                        setStats(prevStats => ({
-                            ...prevStats,
-                            currentScore: sessionData.currentScore,
-                            currentStreak: sessionData.currentStreak,
-                            difficultyTier: sessionData.difficultyTier,
-                            highestStreak: Math.max(permanentStats.highestStreak || 0, sessionData.highestStreak),
-                            highestScore: Math.max(permanentStats.highestScore || 0, sessionData.highestScore),
-                        }));
-                        setAttemptCount(sessionData.attemptCount);
-                        setTotalRoundsPlayed(sessionData.totalRoundsPlayed);
                         setIsSessionActive(true);
-                    } else {
-                        sessionStorage.removeItem(GAME_SESSION_KEY);
                     }
                 } catch (e) {
-                    console.error("Error parsing session data:", e);
                     sessionStorage.removeItem(GAME_SESSION_KEY);
                 }
             }
@@ -211,7 +180,7 @@ export function Game({ user, onSignOut }) {
         fetchUserDataAndSession();
     }, [user, showAlert]);
 
-    // --- Persist Game State ---
+    // --- Persist Session to Storage ---
     useEffect(() => {
         if (user && (gameState === 'playing' || gameState === 'revealing')) {
             const sessionData = {
@@ -222,6 +191,7 @@ export function Game({ user, onSignOut }) {
                 gameState,
                 attemptCount,
                 totalRoundsPlayed,
+                selectedGenre,
                 currentScore: stats.currentScore,
                 currentStreak: stats.currentStreak,
                 difficultyTier: stats.difficultyTier,
@@ -230,52 +200,41 @@ export function Game({ user, onSignOut }) {
             };
             sessionStorage.setItem(GAME_SESSION_KEY, JSON.stringify(sessionData));
         }
-    }, [user, gameState, currentFragment, secretTag, revelationText, attemptCount, totalRoundsPlayed, stats]);
+    }, [user, gameState, currentFragment, secretTag, revelationText, attemptCount, totalRoundsPlayed, stats, selectedGenre]);
 
-    // --- Resume or Start New Session ---
+    // --- Resume/New Game Handlers ---
     const resumeSession = () => {
         const storedSession = sessionStorage.getItem(GAME_SESSION_KEY);
         if (!storedSession) { startNewGame(); return; }
-        const sessionData = JSON.parse(storedSession);
+        const data = JSON.parse(storedSession);
         
-        // Restore state values
-        setCurrentFragment(sessionData.currentFragment);
-        setSecretTag(sessionData.secretTag);
-        setRevelationText(sessionData.revelationText);
-        setGameState(sessionData.gameState);
-        setAttemptCount(sessionData.attemptCount);
-        setTotalRoundsPlayed(sessionData.totalRoundsPlayed);
-
-        // Restore stats (including session-specific high/streak which maxed out permanent ones on load)
-        setStats(prevStats => ({
-            ...prevStats,
-            currentScore: sessionData.currentScore,
-            currentStreak: sessionData.currentStreak,
-            difficultyTier: sessionData.difficultyTier,
-            highestScore: sessionData.highestScore,
-            highestStreak: sessionData.highestStreak,
+        setCurrentFragment(data.currentFragment);
+        setSecretTag(data.secretTag);
+        setRevelationText(data.revelationText);
+        setGameState(data.gameState);
+        setAttemptCount(data.attemptCount);
+        setTotalRoundsPlayed(data.totalRoundsPlayed);
+        setSelectedGenre(data.selectedGenre || "Random");
+        setStats(prev => ({
+            ...prev,
+            currentScore: data.currentScore,
+            currentStreak: data.currentStreak,
+            difficultyTier: data.difficultyTier,
+            highestScore: data.highestScore,
+            highestStreak: data.highestStreak,
         }));
-        
         setIsSessionActive(false); 
     };
 
     const startNewGame = () => {
         sessionStorage.removeItem(GAME_SESSION_KEY);
-        
-        // Preserve permanent stats (totals/highest), reset session stats
-        setStats(prev => ({ 
-            ...prev, 
-            currentScore: 0, 
-            currentStreak: 0,
-        }));
-        
-        // Reset counters and state
+        setStats(prev => ({ ...prev, currentScore: 0, currentStreak: 0 }));
         setAttemptCount(0);
         setIsSessionActive(false);
         setGameState('ready_to_start');
     };
 
-    // --- Classification Handler ---
+    // --- Gameplay Handlers ---
     const handleClassification = (choice) => {
         if (gameState !== 'playing') return;
         setUserClassification(choice);
@@ -284,7 +243,6 @@ export function Game({ user, onSignOut }) {
         const isCorrect = choice === secretTag;
         let newStats = { ...stats };
         let promotionMessage = null;
-        let currentRounds = totalRoundsPlayed;
 
         if (isCorrect) {
             newStats.currentScore += 10;
@@ -295,100 +253,37 @@ export function Game({ user, onSignOut }) {
             
             if (newStats.currentStreak > 0 && newStats.currentStreak % 5 === 0) {
                 newStats.difficultyTier += 1;
-                promotionMessage = `Archivist Promotion! Difficulty Tier is now ${newStats.difficultyTier}. Prepare for greater subtlety!`;
+                promotionMessage = `Archivist Promotion! Difficulty Tier is now ${newStats.difficultyTier}.`;
             }
         } else {
             newStats.currentStreak = 0;
             newStats.totalIncorrect += 1;
         }
 
-        // **FIX: Update state and DB with correct totalRoundsPlayed**
-        // If the current attempt was the 5th attempt (index 4), the round just ended, 
-        // but totalRoundsPlayed state was already updated in startNewRound when the *next* round started.
-        // We use the current state value of totalRoundsPlayed here.
-        
         setStats(newStats);
-        updateStatsInDb(newStats, currentRounds);
-
+        updateStatsInDb(newStats, totalRoundsPlayed);
         if (promotionMessage) showAlert("Promotion Achieved", promotionMessage);
     };
 
-    // --- Sign Out ---
+    // --- Profile & Sign Out Handlers ---
     const handleSignOut = useCallback(async () => {
         sessionStorage.removeItem(GAME_SESSION_KEY);
         const finalStats = { ...stats, currentScore: 0, currentStreak: 0 };
-        // Pass current totalRoundsPlayed to ensure persistence before sign out
         await updateStatsInDb(finalStats, totalRoundsPlayed); 
-        setAttemptCount(0);
-        setTotalRoundsPlayed(0);
         onSignOut();
     }, [stats, onSignOut, updateStatsInDb, totalRoundsPlayed]);
 
-    // --- Edit Profile Handlers ---
     const handleUsernameChange = async () => {
-        if (!newUsername.trim()) { showAlert("Invalid Username", "Please enter a valid username."); return; }
+        if (!newUsername.trim()) return;
         try {
-            const userDocRef = doc(db, "users", user.uid);
-            await updateDoc(userDocRef, { username: newUsername.trim() });
+            await updateDoc(doc(db, "users", user.uid), { username: newUsername.trim() });
             setStats(prev => ({ ...prev, username: newUsername.trim() }));
             setEditProfileOpen(false);
-            showAlert("Username Updated", "Your username has been successfully updated.");
-        } catch (e) { console.error("Error updating username:", e); showAlert("Error", "Failed to update username."); }
+            showAlert("Success", "Username updated.");
+        } catch (e) { showAlert("Error", "Failed to update username."); }
     };
 
-    const handlePasswordChange = async () => {
-        if (!currentPassword || !newPassword || newPassword !== confirmNewPassword) {
-            showAlert("Password Error", "Passwords do not match or fields are empty.");
-            return;
-        }
-        try {
-            // Reauthenticate first (this uses the pattern you had in your code)
-            const credential = auth.EmailAuthProvider.credential(user.email, currentPassword);
-            // This line assumes you have imported Firebase 'auth' object correctly.
-            await auth.currentUser.reauthenticateWithCredential(credential); 
-            await auth.currentUser.updatePassword(newPassword);
-            setCurrentPassword("");
-            setNewPassword("");
-            setConfirmNewPassword("");
-            setEditProfileOpen(false);
-            showAlert("Password Changed", "Your password has been successfully updated.");
-        } catch (e) { console.error("Password change failed:", e); showAlert("Password Change Failed", e.message); }
-    };
-
-    // --- Dropdown styles (kept inline for animation & immediate visual) ---
-    const dropdownStyles = {
-        position: 'absolute',
-        top: 'calc(100% + 8px)',
-        right: 0,
-        background: '#1a1a1a',
-        border: '1px solid #444',
-        borderRadius: '8px',
-        padding: '1rem',
-        minWidth: '220px',
-        zIndex: 50,
-        boxShadow: '0 4px 15px rgba(0,0,0,0.4)',
-        color: '#fff',
-        transition: 'opacity 0.25s ease, transform 0.25s ease',
-        opacity: profileDropdownOpen ? 1 : 0,
-        transform: profileDropdownOpen ? 'translateY(0)' : 'translateY(-10px)',
-        pointerEvents: profileDropdownOpen ? 'auto' : 'none'
-    };
-
-    const dropdownButtonStyles = {
-        display: 'block',
-        width: '100%',
-        marginBottom: '0.5rem',
-        background: '#222',
-        color: '#fff',
-        border: 'none',
-        padding: '0.5rem 0.75rem',
-        borderRadius: '4px',
-        cursor: 'pointer',
-        transition: 'background 0.2s',
-    };
-
-    // --- Render Logic ---
-
+    // --- Render Helpers ---
     if (gameState === 'loading' && !initialLoadComplete) {
         return (
             <div className="game-container fullscreen-layout">
@@ -399,15 +294,13 @@ export function Game({ user, onSignOut }) {
         );
     }
 
-    // Session modal from original code (kept)
     if (isSessionActive) {
         return (
             <div className="game-container fullscreen-layout">
                 <div className="custom-modal-overlay">
                     <div className="custom-modal-content session-prompt">
                         <h3>Archival Session Detected ⏳</h3>
-                        <p>A previous game session was found for {stats.username} (Attempt {displayAttemptCount}/5).</p>
-                        <p>Would you like to resume, or start a new game (resetting current score and streak)?</p>
+                        <p>A previous game session was found (Attempt {displayAttemptCount}/5).</p>
                         <div className="button-group">
                             <button onClick={resumeSession} className="button-primary">Resume Session</button>
                             <button onClick={startNewGame} className="button-primary button-danger">Start New Game</button>
@@ -418,7 +311,6 @@ export function Game({ user, onSignOut }) {
         );
     }
 
-    // --- Main Render ---
     return (
         <div className="game-container">
             {/* Error Modal */}
@@ -432,7 +324,7 @@ export function Game({ user, onSignOut }) {
                 </div>
             )}
 
-            {/* Header (ribbon + dropdown) */}
+            {/* Header */}
             <header className="game-header ribbon-layout" style={{ position: 'relative' }}>
                 <div className="header-left ribbon-left">
                     <div className="title-block">
@@ -441,179 +333,90 @@ export function Game({ user, onSignOut }) {
                     </div>
                 </div>
 
-                <div className="header-right ribbon-right" style={{ position: 'relative' }} ref={dropdownRef}>
-                    <span
-                        className="profile-icon"
-                        style={{ fontSize: '2rem', cursor: 'pointer' }}
-                        onClick={() => setProfileDropdownOpen(prev => !prev)}
-                    >
-                        📜
-                    </span>
-
-                    <div style={dropdownStyles}>
-                        <p style={{ textAlign: 'left' }}><strong>Username:</strong> {stats.username}</p>
-                        <p style={{ textAlign: 'left' }}><strong>UserID:</strong> {user?.uid}</p>
-                        <hr style={{ borderColor: '#555', margin: '0.5rem 0' }} />
-                        <button
-                            style={dropdownButtonStyles}
-                            onMouseOver={e => e.currentTarget.style.background = '#333'}
-                            onMouseOut={e => e.currentTarget.style.background = '#222'}
-                            onClick={() => { setEditProfileOpen(true); setProfileDropdownOpen(false); }}
-                        >
-                            🪶 Edit Profile
-                        </button>
-                        <button
-                            style={dropdownButtonStyles}
-                            onMouseOver={e => e.currentTarget.style.background = '#333'}
-                            onMouseOut={e => e.currentTarget.style.background = '#222'}
-                            onClick={handleSignOut}
-                        >
-                            🗝️ Log Out
-                        </button>
-                    </div>
+                <div className="header-right ribbon-right" ref={dropdownRef}>
+                    <span className="profile-icon" onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}>📜</span>
+                    {profileDropdownOpen && (
+                        <div className="dropdown-menu" style={{
+                            position: 'absolute', top: '100%', right: 0, background: '#1a1a1a', 
+                            border: '1px solid #444', padding: '1rem', zIndex: 100, minWidth: '200px'
+                        }}>
+                            <p><strong>{stats.username}</strong></p>
+                            <button onClick={() => {setEditProfileOpen(true); setProfileDropdownOpen(false);}} className="dropdown-btn">🪶 Edit Profile</button>
+                            <button onClick={handleSignOut} className="dropdown-btn">🗝️ Log Out</button>
+                        </div>
+                    )}
                 </div>
             </header>
+
+            {/* Metrics Tally */}
+            <div className="metrics-tally">
+                <div className="metric"><span className="metric-icon">#</span><p className="metric-label">Rounds:</p><p className="metric-value">{totalRoundsPlayed}</p></div>
+                <div className="metric"><span className="metric-icon">🎯</span><p className="metric-label">Attempt:</p><p className="metric-value">{displayAttemptCount}/5</p></div>
+                <div className="metric"><span className="metric-icon">⚡</span><p className="metric-label">Score:</p><p className="metric-value">{stats.currentScore}</p></div>
+                <div className="metric"><span className="metric-icon">⭐</span><p className="metric-label">High:</p><p className="metric-value">{stats.highestScore}</p></div>
+                <div className="metric"><span className="metric-icon">❤</span><p className="metric-label">Streak:</p><p className="metric-value">{stats.currentStreak}</p></div>
+                <div className="metric"><span className="metric-icon">🏆</span><p className="metric-label">Best Streak:</p><p className="metric-value">{stats.highestStreak}</p></div>
+                <div className="metric"><span className="metric-icon">🎖️</span><p className="metric-label">Tier:</p><p className="metric-value">{stats.difficultyTier}</p></div>
+                <div className="metric"><span className="metric-icon">✅</span><p className="metric-label">Correct:</p><p className="metric-value">{stats.totalCorrect}</p></div>
+                <div className="metric"><span className="metric-icon">🎯</span><p className="metric-label">Accuracy:</p><p className="metric-value">{accuracyRate}%</p></div>
+            </div>
+
+            {/* Main Gameplay Area */}
+            {gameState === 'ready_to_start' ? (
+                <div className="start-game-section archival-scroll" style={{textAlign: 'center'}}>
+                    <h3 className="scroll-title">Select Genre for This Round</h3>
+                    <div className="genre-selector" style={{display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center', margin: '20px'}}>
+                        {genreOptions.map(g => (
+                            <button key={g} className={`genre-button ${selectedGenre === g ? 'selected' : ''}`} onClick={() => setSelectedGenre(g)}>
+                                {g}
+                            </button>
+                        ))}
+                    </div>
+                    <button className="button-primary" onClick={() => startNewRound(stats.difficultyTier)}>Start Round</button>
+                </div>
+            ) : (
+                <>
+                    <div className="archival-scroll fragment-container">
+                        <h3 className="scroll-title">The Archival Scroll (Fragment)</h3>
+                        <p className="scroll-fragment fragment-text">
+                            {gameState === 'loading' ? "Accessing the Stream..." : currentFragment}
+                        </p>
+                    </div>
+
+                    {gameState === 'playing' && (
+                        <div className="classification-buttons">
+                            <h3 className="classifier-title">Classify the Causal Force:</h3>
+                            <div className="classifier-buttons-row">
+                                {classifierOptions.map(option => (
+                                    <button key={option} className="classifier-button" onClick={() => handleClassification(option)}>
+                                        {option}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {(gameState === 'revealing' || gameState === 'error') && (
+                        <div className="revelation-panel archival-scroll">
+                            <h3 className="revelation-title">Revelation: {secretTag}</h3>
+                            <p className="revelation-text">{revelationText}</p>
+                            <button className="button-primary" onClick={() => startNewRound(stats.difficultyTier)}>
+                                {attemptCount === 0 ? "Begin Next Round" : "Next Fragment"}
+                            </button>
+                        </div>
+                    )}
+                </>
+            )}
 
             {/* Edit Profile Modal */}
             {editProfileOpen && (
                 <div className="custom-modal-overlay">
                     <div className="custom-modal-content edit-profile-modal">
                         <h3>Edit Profile</h3>
-                        <div className="form-group">
-                            <label>New Username:</label>
-                            <input type="text" value={newUsername} onChange={e => setNewUsername(e.target.value)} />
-                            <button className="button-primary" onClick={handleUsernameChange}>Save Username</button>
-                        </div>
-                        <div className="form-group">
-                            <label>Current Password:</label>
-                            <input type="password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} />
-                        </div>
-                        <div className="form-group">
-                            <label>New Password:</label>
-                            <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} />
-                        </div>
-                        <div className="form-group">
-                            <label>Confirm New Password:</label>
-                            <input type="password" value={confirmNewPassword} onChange={e => setConfirmNewPassword(e.target.value)} />
-                            <button className="button-primary" onClick={handlePasswordChange}>Change Password</button>
-                        </div>
+                        <input type="text" placeholder="New Username" value={newUsername} onChange={e => setNewUsername(e.target.value)} />
+                        <button className="button-primary" onClick={handleUsernameChange}>Save</button>
                         <button className="button-primary button-danger" onClick={() => setEditProfileOpen(false)}>Close</button>
                     </div>
-                </div>
-            )}
-
-            {/* Metrics Tally */}
-            <div className="metrics-tally">
-                <div className="metric">
-                    <span className="metric-icon">#</span>
-                    <p className="metric-label">Total Rounds:</p>
-                    <p className="metric-value">{totalRoundsPlayed}</p>
-                </div>
-                <div className="metric">
-                    <span className="metric-icon">🎯</span>
-                    <p className="metric-label">Round Attempts:</p>
-                    <p className="metric-value">{displayAttemptCount} / 5</p>
-                </div>
-                <div className="metric">
-                    <span className="metric-icon">⚡</span>
-                    <p className="metric-label">Current Score:</p>
-                    <p className="metric-value">{stats.currentScore}</p>
-                </div>
-                <div className="metric">
-                    <span className="metric-icon">⭐</span>
-                    <p className="metric-label">Highest Score:</p>
-                    <p className="metric-value">{stats.highestScore}</p>
-                </div>
-                <div className="metric">
-                    <span className="metric-icon">❤</span>
-                    <p className="metric-label">Current Streak:</p>
-                    <p className="metric-value">{stats.currentStreak}</p>
-                </div>
-                <div className="metric">
-                    <span className="metric-icon">🏆</span>
-                    <p className="metric-label">Highest Streak:</p>
-                    <p className="metric-value">{stats.highestStreak}</p>
-                </div>
-                <div className="metric">
-                    <span className="metric-icon"> tier</span>
-                    <p className="metric-label">Difficulty Tier:</p>
-                    <p className="metric-value">{stats.difficultyTier}</p>
-                </div>
-                <div className="metric">
-                    <span className="metric-icon">✅</span>
-                    <p className="metric-label">Total Correct:</p>
-                    <p className="metric-value">{stats.totalCorrect}</p>
-                </div>
-                <div className="metric">
-                    <span className="metric-icon">❌</span>
-                    <p className="metric-label">Total Incorrect:</p>
-                    <p className="metric-value">{stats.totalIncorrect}</p>
-                </div>
-                <div className="metric">
-                    <span className="metric-icon">🎯</span>
-                    <p className="metric-label">Accuracy Rate:</p>
-                    <p className="metric-value">{accuracyRate}%</p>
-                </div>
-            </div>
-
-            {/* The Archival Scroll (Fragment Display) */}
-            <div className="archival-scroll fragment-container">
-                <h3 className="scroll-title">The Archival Scroll (Fragment)</h3>
-                <p className="scroll-fragment fragment-text">
-                    {(gameState === 'loading' || gameState === 'error') ? "Accessing the Archival Stream..." : (currentFragment || "Press 'Start Round' to access a fragment from the Moirai Archives...")}
-                </p>
-            </div>
-
-            {/* Classification Options / Buttons */}
-            {gameState === 'playing' && (
-                <div className="classification-buttons classifier">
-                    <h3 className="classifier-title">Classify the Causal Force:</h3>
-                    <div className="classifier-buttons">
-                        {classifierOptions.map(option => (
-                            <button
-                                key={option}
-                                className={`classifier-button ${userClassification === option ? 'selected' : ''}`}
-                                onClick={() => handleClassification(option)}
-                            >
-                                {option}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-            )}
-
-            {/* Reveal / Revelation Panel */}
-            {(gameState === 'revealing' || gameState === 'error') && (
-                <div className="revelation-overlay">
-                    <div className="revelation-panel">
-                        <h2 className={`revelation-header ${userClassification === secretTag ? 'correct' : 'incorrect'}`}>
-                            {gameState === 'error' ? '🛑 System Interruption' : (userClassification === secretTag ? '✅ Axiom Confirmed: Correct Classification' : '❌ Axiom Error: Narrative Deception Successful')}
-                        </h2>
-
-                        <div className="revelation-text-box">
-                            <p className="revelation-focus">
-                                The <strong>True Causal Force</strong> in this Fragment was: <strong>{secretTag}</strong>
-                            </p>
-                            <hr />
-                            <p className="revelation-justification">
-                                <strong>Revelation Text:</strong> {revelationText}
-                            </p>
-                        </div>
-
-                        <button
-                            className="button-primary continue-button"
-                            onClick={() => startNewRound(stats.difficultyTier)}
-                        >
-                            Continue to Next Fragment
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {/* Ready to Start */}
-            {gameState === 'ready_to_start' && (
-                <div className="start-game-section">
-                    <button className="button-primary" onClick={() => startNewRound(stats.difficultyTier)}>Start Round</button>
                 </div>
             )}
         </div>
