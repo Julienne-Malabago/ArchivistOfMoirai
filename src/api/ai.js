@@ -17,15 +17,12 @@ const exponentialBackoffFetch = async (url, options, retries = 3) => {
             const response = await fetch(url, options);
             if (response.status === 429 && i < retries - 1) { // Rate limit
                 const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
-                // console.log(`Rate limit hit. Retrying in ${delay / 1000}s...`);
                 await new Promise(resolve => setTimeout(resolve, delay));
                 continue;
             }
             return response;
         } catch (error) {
-            // console.error(`Fetch attempt ${i + 1} failed:`, error);
             if (i === retries - 1) throw error;
-            // Delay before next retry (for connection errors)
             const delay = Math.pow(2, i) * 1000 + Math.random() * 500;
             await new Promise(resolve => setTimeout(resolve, delay));
         }
@@ -38,9 +35,10 @@ const exponentialBackoffFetch = async (url, options, retries = 3) => {
  * Fetches a new story fragment and its revelation from the secured backend.
  * @param {number} difficultyTier The current game difficulty.
  * @param {AxiomTag} secretTag The true causal force to embed.
+ * @param {string} genre The selected narrative setting (e.g., 'Noir', 'Sci-Fi').
  * @returns {Promise<{fragmentText: string, revelationText: string}>}
  */
-export async function fetchFragmentFromAI(difficultyTier, secretTag) {
+export async function fetchFragmentFromAI(difficultyTier, secretTag, genre) {
     
     try {
         const response = await exponentialBackoffFetch(API_ENDPOINT, {
@@ -51,11 +49,15 @@ export async function fetchFragmentFromAI(difficultyTier, secretTag) {
             body: JSON.stringify({
                 secretTag: secretTag,
                 difficultyTier: difficultyTier,
+                genre: genre, // This ensures the backend receives the user's choice
             }),
         });
 
         if (!response.ok) {
-            const errorBody = await response.json().catch(() => ({ error: 'Unknown server error', details: 'No JSON body available' }));
+            const errorBody = await response.json().catch(() => ({ 
+                error: 'Unknown server error', 
+                details: 'No JSON body available' 
+            }));
             throw new Error(`Server Error (${response.status}): ${errorBody.error || response.statusText}`);
         }
 
@@ -73,7 +75,6 @@ export async function fetchFragmentFromAI(difficultyTier, secretTag) {
         
     } catch (error) {
         console.error("AI Service Fatal Error:", error);
-        // Provide a user-friendly error message on the frontend
-        throw new Error(`Failed to contact the Archivist AI. Please ensure the backend server (${API_ENDPOINT}) is running. Details: ${error.message}`);
+        throw new Error(`Failed to contact the Archivist AI. Details: ${error.message}`);
     }
 }
