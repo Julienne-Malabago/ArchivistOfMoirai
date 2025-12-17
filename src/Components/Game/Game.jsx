@@ -5,6 +5,7 @@ import { fetchFragmentFromAI } from "../../api/ai";
 
 // Constant for the Session Storage key
 const GAME_SESSION_KEY = "moirai_game_session";
+const GENRE_OPTIONS = ['Random', 'Fantasy', 'Sci-Fi', 'Mystery', 'Romance', 'Horror', 'Cyberpunk', 'Noir'];
 
 export function Game({ user, onSignOut }) {
     // --- Game & User Stats ---
@@ -19,14 +20,16 @@ export function Game({ user, onSignOut }) {
         totalIncorrect: 0,
     });
 
-    const [gameState, setGameState] = useState('loading'); // 'loading', 'playing', 'revealing', 'error', 'ready_to_start'
+    const [gameState, setGameState] = useState('loading'); 
     const [currentFragment, setCurrentFragment] = useState("");
     const [userClassification, setUserClassification] = useState(null);
     const [secretTag, setSecretTag] = useState(null);
     const [revelationText, setRevelationText] = useState(null);
     const [errorMessage, setErrorMessage] = useState(null);
+    
+    // Genre State
+    const [selectedGenre, setSelectedGenre] = useState('Random');
 
-    // attemptCount is 0-indexed (0 to 4) for the 5 attempts in a round.
     const [attemptCount, setAttemptCount] = useState(0); 
     const [totalRoundsPlayed, setTotalRoundsPlayed] = useState(0);
     const [initialLoadComplete, setInitialLoadComplete] = useState(false);
@@ -35,7 +38,6 @@ export function Game({ user, onSignOut }) {
     const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
     const [editProfileOpen, setEditProfileOpen] = useState(false);
 
-    // --- Edit Profile ---
     const [newUsername, setNewUsername] = useState("");
     const [currentPassword, setCurrentPassword] = useState("");
     const [newPassword, setNewPassword] = useState("");
@@ -53,8 +55,6 @@ export function Game({ user, onSignOut }) {
         ? ((stats.totalCorrect / totalAttempts) * 100).toFixed(1)
         : 'N/A';
 
-    // **FIX 1: Corrected Display Attempt Count Logic**
-    // 0 -> 1, 1 -> 2, ..., 4 -> 5. This resolves the NAN/5 display issue.
     const displayAttemptCount = attemptCount + 1; 
 
     // --- Close dropdown on outside click ---
@@ -69,7 +69,6 @@ export function Game({ user, onSignOut }) {
     }, []);
 
     // --- Update Stats in Firestore ---
-    // **FIX 2: Passed totalRoundsPlayed as an argument for accurate update**
     const updateStatsInDb = useCallback(async (newStats, roundsPlayed) => {
         if (!user || !user.uid) return;
         const userDocRef = doc(db, "users", user.uid);
@@ -80,14 +79,14 @@ export function Game({ user, onSignOut }) {
                 highestStreak: newStats.highestStreak,
                 difficultyTier: newStats.difficultyTier,
                 highestScore: newStats.highestScore,
-                totalRoundsPlayed: roundsPlayed, // Use the passed argument
+                totalRoundsPlayed: roundsPlayed,
                 totalCorrect: newStats.totalCorrect,
                 totalIncorrect: newStats.totalIncorrect,
             });
         } catch (error) {
             console.error("Error updating stats in Firestore:", error);
         }
-    }, [user]); // Removed totalRoundsPlayed from dependencies to avoid stale closures, using argument instead.
+    }, [user]);
 
     // --- Start New Round ---
     const startNewRound = useCallback(async (currentDifficulty) => {
@@ -99,44 +98,37 @@ export function Game({ user, onSignOut }) {
     
         const effectiveDifficulty = currentDifficulty || stats.difficultyTier;
         const randomSecretTag = classifierOptions[Math.floor(Math.random() * classifierOptions.length)];
+        
+        // Determine the genre for this specific call
+        const activeGenre = selectedGenre === 'Random' 
+            ? GENRE_OPTIONS[Math.floor(Math.random() * (GENRE_OPTIONS.length - 1)) + 1] 
+            : selectedGenre;
     
         try {
-            // --- 1. CALL API ---
-            // This is the only line that can fail due to the 503 error
-            const { fragmentText, revelationText: revText } = await fetchFragmentFromAI(effectiveDifficulty, randomSecretTag);
+            // Updated fetch call to include the genre parameter
+            const { fragmentText, revelationText: revText } = await fetchFragmentFromAI(effectiveDifficulty, randomSecretTag, activeGenre);
     
-            // --- 2. SUCCESS: Apply State Updates (Only if API call succeeds) ---
-            
-            // Calculate next attempt count (0 to 4 cycle)
             const nextAttemptCount = attemptCount === 4 ? 0 : attemptCount + 1;
             
-            // **FIX IMPLEMENTED HERE:**
-            // Set state only upon successful fragment generation.
             setAttemptCount(nextAttemptCount);
             if (nextAttemptCount === 0) {
-                // Increment total rounds only when a full 5-attempt round cycle starts
                 setTotalRoundsPlayed(prev => prev + 1);
             }
     
-            // Set the new game data
             setSecretTag(randomSecretTag);
             setCurrentFragment(fragmentText);
             setRevelationText(revText);
             setGameState('playing');
             
         } catch (error) {
-            // --- 3. FAILURE: Do NOT Apply State Updates ---
-            // attemptCount and totalRoundsPlayed remain at their previous values.
             console.error("Fragment generation failed:", error);
             setSecretTag("ERROR");
-            setRevelationText("Due to a system failure, the true causal force cannot be determined. Check console for details.");
+            setRevelationText("Due to a system failure, the true causal force cannot be determined.");
             setCurrentFragment("");
             setGameState('error');
-            // This will display the button to retry, which re-runs this function
-            // without counting the failed attempt.
             showAlert("AI Generation Error", error.message || String(error));
         }
-    }, [stats.difficultyTier, attemptCount, showAlert, classifierOptions]);
+    }, [stats.difficultyTier, attemptCount, showAlert, classifierOptions, selectedGenre]);
 
     // --- Load User Stats & Session ---
     useEffect(() => {
@@ -148,13 +140,11 @@ export function Game({ user, onSignOut }) {
             let permanentStats = {};
             let sessionFound = false;
             
-            // 1. Fetch Permanent Stats from DB
             try {
                 const docSnap = await getDoc(userDocRef);
                 if (docSnap.exists()) {
                     permanentStats = docSnap.data();
-                    const dbRoundsPlayed = permanentStats.totalRoundsPlayed || 0;
-                    setTotalRoundsPlayed(dbRoundsPlayed);
+                    setTotalRoundsPlayed(permanentStats.totalRoundsPlayed || 0);
                     
                     setStats(s => ({
                         ...s,
@@ -167,17 +157,16 @@ export function Game({ user, onSignOut }) {
                         totalCorrect: permanentStats.totalCorrect || 0,
                         totalIncorrect: permanentStats.totalIncorrect || 0,
                     }));
-                    setAttemptCount(0); // Reset attempt count on initial load/login
+                    setAttemptCount(0); 
                 }
             } catch (error) {
                 console.error("Error fetching user data:", error);
-                showAlert("Data Error", "Could not load user progress from the Archives.");
+                showAlert("Data Error", "Could not load user progress.");
                 setGameState('error');
                 setInitialLoadComplete(true);
                 return;
             }
 
-            // 2. Check Session Storage
             const storedSession = sessionStorage.getItem(GAME_SESSION_KEY);
             if (storedSession) {
                 try {
@@ -194,12 +183,12 @@ export function Game({ user, onSignOut }) {
                         }));
                         setAttemptCount(sessionData.attemptCount);
                         setTotalRoundsPlayed(sessionData.totalRoundsPlayed);
+                        if(sessionData.selectedGenre) setSelectedGenre(sessionData.selectedGenre);
                         setIsSessionActive(true);
                     } else {
                         sessionStorage.removeItem(GAME_SESSION_KEY);
                     }
                 } catch (e) {
-                    console.error("Error parsing session data:", e);
                     sessionStorage.removeItem(GAME_SESSION_KEY);
                 }
             }
@@ -222,6 +211,7 @@ export function Game({ user, onSignOut }) {
                 gameState,
                 attemptCount,
                 totalRoundsPlayed,
+                selectedGenre,
                 currentScore: stats.currentScore,
                 currentStreak: stats.currentStreak,
                 difficultyTier: stats.difficultyTier,
@@ -230,23 +220,21 @@ export function Game({ user, onSignOut }) {
             };
             sessionStorage.setItem(GAME_SESSION_KEY, JSON.stringify(sessionData));
         }
-    }, [user, gameState, currentFragment, secretTag, revelationText, attemptCount, totalRoundsPlayed, stats]);
+    }, [user, gameState, currentFragment, secretTag, revelationText, attemptCount, totalRoundsPlayed, stats, selectedGenre]);
 
-    // --- Resume or Start New Session ---
     const resumeSession = () => {
         const storedSession = sessionStorage.getItem(GAME_SESSION_KEY);
         if (!storedSession) { startNewGame(); return; }
         const sessionData = JSON.parse(storedSession);
         
-        // Restore state values
         setCurrentFragment(sessionData.currentFragment);
         setSecretTag(sessionData.secretTag);
         setRevelationText(sessionData.revelationText);
         setGameState(sessionData.gameState);
         setAttemptCount(sessionData.attemptCount);
         setTotalRoundsPlayed(sessionData.totalRoundsPlayed);
+        if(sessionData.selectedGenre) setSelectedGenre(sessionData.selectedGenre);
 
-        // Restore stats (including session-specific high/streak which maxed out permanent ones on load)
         setStats(prevStats => ({
             ...prevStats,
             currentScore: sessionData.currentScore,
@@ -261,21 +249,12 @@ export function Game({ user, onSignOut }) {
 
     const startNewGame = () => {
         sessionStorage.removeItem(GAME_SESSION_KEY);
-        
-        // Preserve permanent stats (totals/highest), reset session stats
-        setStats(prev => ({ 
-            ...prev, 
-            currentScore: 0, 
-            currentStreak: 0,
-        }));
-        
-        // Reset counters and state
+        setStats(prev => ({ ...prev, currentScore: 0, currentStreak: 0 }));
         setAttemptCount(0);
         setIsSessionActive(false);
         setGameState('ready_to_start');
     };
 
-    // --- Classification Handler ---
     const handleClassification = (choice) => {
         if (gameState !== 'playing') return;
         setUserClassification(choice);
@@ -284,7 +263,6 @@ export function Game({ user, onSignOut }) {
         const isCorrect = choice === secretTag;
         let newStats = { ...stats };
         let promotionMessage = null;
-        let currentRounds = totalRoundsPlayed;
 
         if (isCorrect) {
             newStats.currentScore += 10;
@@ -295,79 +273,55 @@ export function Game({ user, onSignOut }) {
             
             if (newStats.currentStreak > 0 && newStats.currentStreak % 5 === 0) {
                 newStats.difficultyTier += 1;
-                promotionMessage = `Archivist Promotion! Difficulty Tier is now ${newStats.difficultyTier}. Prepare for greater subtlety!`;
+                promotionMessage = `Archivist Promotion! Difficulty Tier is now ${newStats.difficultyTier}.`;
             }
         } else {
             newStats.currentStreak = 0;
             newStats.totalIncorrect += 1;
         }
 
-        // **FIX: Update state and DB with correct totalRoundsPlayed**
-        // If the current attempt was the 5th attempt (index 4), the round just ended, 
-        // but totalRoundsPlayed state was already updated in startNewRound when the *next* round started.
-        // We use the current state value of totalRoundsPlayed here.
-        
         setStats(newStats);
-        updateStatsInDb(newStats, currentRounds);
-
+        updateStatsInDb(newStats, totalRoundsPlayed);
         if (promotionMessage) showAlert("Promotion Achieved", promotionMessage);
     };
 
-    // --- Sign Out ---
     const handleSignOut = useCallback(async () => {
         sessionStorage.removeItem(GAME_SESSION_KEY);
         const finalStats = { ...stats, currentScore: 0, currentStreak: 0 };
-        // Pass current totalRoundsPlayed to ensure persistence before sign out
         await updateStatsInDb(finalStats, totalRoundsPlayed); 
         setAttemptCount(0);
         setTotalRoundsPlayed(0);
         onSignOut();
     }, [stats, onSignOut, updateStatsInDb, totalRoundsPlayed]);
 
-    // --- Edit Profile Handlers ---
     const handleUsernameChange = async () => {
-        if (!newUsername.trim()) { showAlert("Invalid Username", "Please enter a valid username."); return; }
+        if (!newUsername.trim()) return;
         try {
             const userDocRef = doc(db, "users", user.uid);
             await updateDoc(userDocRef, { username: newUsername.trim() });
             setStats(prev => ({ ...prev, username: newUsername.trim() }));
             setEditProfileOpen(false);
-            showAlert("Username Updated", "Your username has been successfully updated.");
-        } catch (e) { console.error("Error updating username:", e); showAlert("Error", "Failed to update username."); }
+            showAlert("Success", "Username updated.");
+        } catch (e) { showAlert("Error", "Failed to update username."); }
     };
 
     const handlePasswordChange = async () => {
-        if (!currentPassword || !newPassword || newPassword !== confirmNewPassword) {
-            showAlert("Password Error", "Passwords do not match or fields are empty.");
-            return;
-        }
+        if (!currentPassword || !newPassword || newPassword !== confirmNewPassword) return;
         try {
-            // Reauthenticate first (this uses the pattern you had in your code)
             const credential = auth.EmailAuthProvider.credential(user.email, currentPassword);
-            // This line assumes you have imported Firebase 'auth' object correctly.
             await auth.currentUser.reauthenticateWithCredential(credential); 
             await auth.currentUser.updatePassword(newPassword);
-            setCurrentPassword("");
-            setNewPassword("");
-            setConfirmNewPassword("");
             setEditProfileOpen(false);
-            showAlert("Password Changed", "Your password has been successfully updated.");
-        } catch (e) { console.error("Password change failed:", e); showAlert("Password Change Failed", e.message); }
+            showAlert("Success", "Password updated.");
+        } catch (e) { showAlert("Error", e.message); }
     };
 
-    // --- Dropdown styles (kept inline for animation & immediate visual) ---
+    // --- Inline Styles ---
     const dropdownStyles = {
-        position: 'absolute',
-        top: 'calc(100% + 8px)',
-        right: 0,
-        background: '#1a1a1a',
-        border: '1px solid #444',
-        borderRadius: '8px',
-        padding: '1rem',
-        minWidth: '220px',
-        zIndex: 50,
-        boxShadow: '0 4px 15px rgba(0,0,0,0.4)',
-        color: '#fff',
+        position: 'absolute', top: 'calc(100% + 8px)', right: 0,
+        background: '#1a1a1a', border: '1px solid #444', borderRadius: '8px',
+        padding: '1rem', minWidth: '220px', zIndex: 50,
+        boxShadow: '0 4px 15px rgba(0,0,0,0.4)', color: '#fff',
         transition: 'opacity 0.25s ease, transform 0.25s ease',
         opacity: profileDropdownOpen ? 1 : 0,
         transform: profileDropdownOpen ? 'translateY(0)' : 'translateY(-10px)',
@@ -375,39 +329,48 @@ export function Game({ user, onSignOut }) {
     };
 
     const dropdownButtonStyles = {
-        display: 'block',
-        width: '100%',
-        marginBottom: '0.5rem',
-        background: '#222',
-        color: '#fff',
-        border: 'none',
-        padding: '0.5rem 0.75rem',
-        borderRadius: '4px',
-        cursor: 'pointer',
-        transition: 'background 0.2s',
+        display: 'block', width: '100%', marginBottom: '0.5rem',
+        background: '#222', color: '#fff', border: 'none',
+        padding: '0.5rem 0.75rem', borderRadius: '4px', cursor: 'pointer',
     };
 
-    // --- Render Logic ---
+    const genreContainerStyle = {
+        margin: '20px auto',
+        padding: '15px',
+        background: 'rgba(26, 26, 26, 0.6)',
+        borderRadius: '12px',
+        border: '1px solid #333',
+        maxWidth: '400px',
+        textAlign: 'center'
+    };
+
+    const genreSelectStyle = {
+        background: '#000',
+        color: '#d4af37', // Gold archival color
+        border: '1px solid #d4af37',
+        padding: '8px 12px',
+        borderRadius: '4px',
+        fontSize: '1rem',
+        fontFamily: 'serif',
+        cursor: 'pointer',
+        outline: 'none'
+    };
 
     if (gameState === 'loading' && !initialLoadComplete) {
         return (
             <div className="game-container fullscreen-layout">
-                <div className="loading-spinner">
-                    <p>Accessing the Archives and Loading User Profile...</p>
-                </div>
+                <div className="loading-spinner"><p>Accessing the Archives...</p></div>
             </div>
         );
     }
 
-    // Session modal from original code (kept)
     if (isSessionActive) {
         return (
             <div className="game-container fullscreen-layout">
                 <div className="custom-modal-overlay">
                     <div className="custom-modal-content session-prompt">
                         <h3>Archival Session Detected ⏳</h3>
-                        <p>A previous game session was found for {stats.username} (Attempt {displayAttemptCount}/5).</p>
-                        <p>Would you like to resume, or start a new game (resetting current score and streak)?</p>
+                        <p>A previous game session was found (Attempt {displayAttemptCount}/5).</p>
                         <div className="button-group">
                             <button onClick={resumeSession} className="button-primary">Resume Session</button>
                             <button onClick={startNewGame} className="button-primary button-danger">Start New Game</button>
@@ -418,10 +381,8 @@ export function Game({ user, onSignOut }) {
         );
     }
 
-    // --- Main Render ---
     return (
         <div className="game-container">
-            {/* Error Modal */}
             {errorMessage && (
                 <div className="custom-modal-overlay">
                     <div className="custom-modal-content">
@@ -432,7 +393,6 @@ export function Game({ user, onSignOut }) {
                 </div>
             )}
 
-            {/* Header (ribbon + dropdown) */}
             <header className="game-header ribbon-layout" style={{ position: 'relative' }}>
                 <div className="header-left ribbon-left">
                     <div className="title-block">
@@ -442,39 +402,16 @@ export function Game({ user, onSignOut }) {
                 </div>
 
                 <div className="header-right ribbon-right" style={{ position: 'relative' }} ref={dropdownRef}>
-                    <span
-                        className="profile-icon"
-                        style={{ fontSize: '2rem', cursor: 'pointer' }}
-                        onClick={() => setProfileDropdownOpen(prev => !prev)}
-                    >
-                        📜
-                    </span>
-
+                    <span className="profile-icon" style={{ fontSize: '2rem', cursor: 'pointer' }} onClick={() => setProfileDropdownOpen(prev => !prev)}>📜</span>
                     <div style={dropdownStyles}>
-                        <p style={{ textAlign: 'left' }}><strong>Username:</strong> {stats.username}</p>
-                        <p style={{ textAlign: 'left' }}><strong>UserID:</strong> {user?.uid}</p>
+                        <p><strong>Username:</strong> {stats.username}</p>
                         <hr style={{ borderColor: '#555', margin: '0.5rem 0' }} />
-                        <button
-                            style={dropdownButtonStyles}
-                            onMouseOver={e => e.currentTarget.style.background = '#333'}
-                            onMouseOut={e => e.currentTarget.style.background = '#222'}
-                            onClick={() => { setEditProfileOpen(true); setProfileDropdownOpen(false); }}
-                        >
-                            🪶 Edit Profile
-                        </button>
-                        <button
-                            style={dropdownButtonStyles}
-                            onMouseOver={e => e.currentTarget.style.background = '#333'}
-                            onMouseOut={e => e.currentTarget.style.background = '#222'}
-                            onClick={handleSignOut}
-                        >
-                            🗝️ Log Out
-                        </button>
+                        <button style={dropdownButtonStyles} onClick={() => { setEditProfileOpen(true); setProfileDropdownOpen(false); }}>🪶 Edit Profile</button>
+                        <button style={dropdownButtonStyles} onClick={handleSignOut}>🗝️ Log Out</button>
                     </div>
                 </div>
             </header>
 
-            {/* Edit Profile Modal */}
             {editProfileOpen && (
                 <div className="custom-modal-overlay">
                     <div className="custom-modal-content edit-profile-modal">
@@ -503,6 +440,7 @@ export function Game({ user, onSignOut }) {
             )}
 
             {/* Metrics Tally */}
+
             <div className="metrics-tally">
                 <div className="metric">
                     <span className="metric-icon">#</span>
@@ -556,63 +494,54 @@ export function Game({ user, onSignOut }) {
                 </div>
             </div>
 
-            {/* The Archival Scroll (Fragment Display) */}
             <div className="archival-scroll fragment-container">
                 <h3 className="scroll-title">The Archival Scroll (Fragment)</h3>
                 <p className="scroll-fragment fragment-text">
-                    {(gameState === 'loading' || gameState === 'error') ? "Accessing the Archival Stream..." : (currentFragment || "Press 'Start Round' to access a fragment from the Moirai Archives...")}
+                    {(gameState === 'loading' || gameState === 'error') ? "Accessing the Archival Stream..." : (currentFragment || "Select a genre and press 'Start Round'...")}
                 </p>
             </div>
 
-            {/* Classification Options / Buttons */}
             {gameState === 'playing' && (
                 <div className="classification-buttons classifier">
                     <h3 className="classifier-title">Classify the Causal Force:</h3>
                     <div className="classifier-buttons">
                         {classifierOptions.map(option => (
-                            <button
-                                key={option}
-                                className={`classifier-button ${userClassification === option ? 'selected' : ''}`}
-                                onClick={() => handleClassification(option)}
-                            >
-                                {option}
-                            </button>
+                            <button key={option} className={`classifier-button ${userClassification === option ? 'selected' : ''}`} onClick={() => handleClassification(option)}>{option}</button>
                         ))}
                     </div>
                 </div>
             )}
 
-            {/* Reveal / Revelation Panel */}
             {(gameState === 'revealing' || gameState === 'error') && (
                 <div className="revelation-overlay">
                     <div className="revelation-panel">
                         <h2 className={`revelation-header ${userClassification === secretTag ? 'correct' : 'incorrect'}`}>
-                            {gameState === 'error' ? '🛑 System Interruption' : (userClassification === secretTag ? '✅ Axiom Confirmed: Correct Classification' : '❌ Axiom Error: Narrative Deception Successful')}
+                            {gameState === 'error' ? '🛑 System Interruption' : (userClassification === secretTag ? '✅ Axiom Confirmed' : '❌ Axiom Error')}
                         </h2>
-
                         <div className="revelation-text-box">
-                            <p className="revelation-focus">
-                                The <strong>True Causal Force</strong> in this Fragment was: <strong>{secretTag}</strong>
-                            </p>
+                            <p className="revelation-focus">True Force: <strong>{secretTag}</strong></p>
                             <hr />
-                            <p className="revelation-justification">
-                                <strong>Revelation Text:</strong> {revelationText}
-                            </p>
+                            <p className="revelation-justification"><strong>Revelation:</strong> {revelationText}</p>
                         </div>
-
-                        <button
-                            className="button-primary continue-button"
-                            onClick={() => startNewRound(stats.difficultyTier)}
-                        >
-                            Continue to Next Fragment
-                        </button>
+                        <button className="button-primary continue-button" onClick={() => startNewRound(stats.difficultyTier)}>Continue to Next Fragment</button>
                     </div>
                 </div>
             )}
 
-            {/* Ready to Start */}
             {gameState === 'ready_to_start' && (
-                <div className="start-game-section">
+                <div className="start-game-section" style={{textAlign: 'center'}}>
+                    <div style={genreContainerStyle}>
+                        <p style={{marginBottom: '10px', fontSize: '0.9rem', color: '#888', textTransform: 'uppercase', letterSpacing: '1px'}}>Choose Narrative Setting</p>
+                        <select 
+                            value={selectedGenre} 
+                            onChange={(e) => setSelectedGenre(e.target.value)}
+                            style={genreSelectStyle}
+                        >
+                            {GENRE_OPTIONS.map(genre => (
+                                <option key={genre} value={genre}>{genre}</option>
+                            ))}
+                        </select>
+                    </div>
                     <button className="button-primary" onClick={() => startNewRound(stats.difficultyTier)}>Start Round</button>
                 </div>
             )}
