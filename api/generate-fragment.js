@@ -1,6 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
-
-const MODEL_NAME = "gemini-2.0-flash"; // Optimized for speed and JSON
+import { GoogleGenerativeAI } from "@google/generative-ai"; // Use the standard import
 
 export default async function handler(req, res) {
     if (req.method !== "POST") {
@@ -12,19 +10,18 @@ export default async function handler(req, res) {
         return res.status(500).json({ error: "Missing API Key" });
     }
 
-    const genai = new GoogleGenAI(apiKey);
+    // --- THE FIX ---
+    // Pass the apiKey string directly, not as { apiKey: apiKey }
+    const genAI = new GoogleGenerativeAI(apiKey); 
+    const MODEL_NAME = "gemini-1.5-flash"; 
 
-    // Destructure data from the request body
     const { secretTag, difficultyTier, genre } = req.body;
 
-    // CORE VALIDATION: Only fail if the mechanical game data is missing
+    // Safety check for inputs
     if (!secretTag || difficultyTier === undefined) {
-        return res.status(400).json({
-            error: "Missing required game parameters: secretTag or difficultyTier"
-        });
+        return res.status(400).json({ error: "Missing secretTag or difficultyTier" });
     }
 
-    // FALLBACK: If genre is missing or "Random", handle it gracefully
     const activeGenre = (genre && genre !== "Random") ? genre : "a randomly chosen literary genre";
 
     const JSON_SCHEMA = {
@@ -37,26 +34,18 @@ export default async function handler(req, res) {
     };
 
     const prompt = `
-        You are the Archivist of Moirai, a cosmic observer of causality.
+        You are the Archivist of Moirai.
         Generate a short story fragment (100–150 words).
-
-        Rules:
-        - Genre: ${activeGenre}
-        - Secret Causal Force: ${secretTag}
-        - Difficulty Tier: ${difficultyTier} (Higher means the causal force is more subtle)
-
-        The fragment should reflect the chosen genre's tone and tropes. 
-        The causal force (${secretTag}) must be the driving factor of the scene but should not be explicitly named in the fragmentText.
-        
-        The revelationText should be a 1-2 sentence cryptic explanation of how ${secretTag} manifested in the story.
-
+        Genre: ${activeGenre}
+        Secret Causal Force: ${secretTag}
+        Difficulty Tier: ${difficultyTier}
         Return ONLY valid JSON.
     `;
 
     try {
-        const model = genai.getGenerativeModel({ model: MODEL_NAME });
-        const result = await model.generateContent({
-            contents: [{ role: "user", parts: [{ text: prompt }] }],
+        // Initialize the model instance correctly
+        const model = genAI.getGenerativeModel({ 
+            model: MODEL_NAME,
             generationConfig: {
                 responseMimeType: "application/json",
                 responseSchema: JSON_SCHEMA,
@@ -64,11 +53,13 @@ export default async function handler(req, res) {
             }
         });
 
-        const data = JSON.parse(result.response.text());
-        return res.status(200).json(data);
+        const result = await model.generateContent(prompt);
+        const responseText = result.response.text();
+        
+        return res.status(200).json(JSON.parse(responseText));
 
     } catch (err) {
-        console.error("GenAI error:", err);
+        console.error("Gemini AI error:", err);
         return res.status(500).json({ error: `AI generation failed: ${err.message}` });
     }
 }
