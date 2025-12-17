@@ -3,34 +3,46 @@ import { GoogleGenAI } from "@google/genai";
 
 const MODEL_NAME = "gemini-2.5-flash";
 
-// Attempt strict parse first, then fallback cleaning
+// --- Helper: Attempt strict parse first, fallback to cleaned JSON ---
 function parseAIResponse(raw) {
     if (!raw) throw new Error("Empty AI response");
 
     try {
-        // First attempt: strict JSON parse
+        // Strict JSON parse
         return JSON.parse(raw);
     } catch {
         // Fallback: remove markdown fences and extra text
         const cleaned = raw.replace(/```json|```/g, "").trim();
         const start = cleaned.indexOf("{");
         const end = cleaned.lastIndexOf("}") + 1;
-        if (start === -1 || end === -1) throw new Error("No valid JSON found");
+        if (start === -1 || end === -1) throw new Error("No valid JSON found in AI response");
         return JSON.parse(cleaned.substring(start, end));
     }
 }
 
+// --- Serverless Handler ---
 export default async function handler(req, res) {
     if (req.method !== "POST") {
-        return res.status(405).json({ error: "Method Not Allowed" });
+        return res.status(405).json({ 
+            errorType: "MethodNotAllowed", 
+            errorMessage: "Only POST requests are allowed." 
+        });
     }
 
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) return res.status(500).json({ error: "GEMINI_API_KEY missing" });
+    if (!apiKey) {
+        return res.status(500).json({ 
+            errorType: "MissingAPIKey", 
+            errorMessage: "GEMINI_API_KEY is missing from environment variables." 
+        });
+    }
 
     const { secretTag, difficultyTier } = req.body;
     if (!secretTag || difficultyTier === undefined) {
-        return res.status(400).json({ error: "Missing secretTag or difficultyTier" });
+        return res.status(400).json({ 
+            errorType: "InvalidRequest", 
+            errorMessage: "Missing required fields: secretTag or difficultyTier." 
+        });
     }
 
     const genAI = new GoogleGenAI({ apiKey });
@@ -79,17 +91,10 @@ No markdown. No commentary. No extra text.
     } catch (err) {
         console.error("ARCHIVIST AI ERROR:", err);
 
-        // Check if the error is a service unavailable / 503 type
-        if (err?.message?.includes("503") || err?.message?.toLowerCase().includes("service unavailable")) {
-            return res.status(503).json({
-                error: "Archivist AI service is temporarily unavailable.",
-                details: err.message
-            });
-        }
-
+        // Return the actual error type and message
         return res.status(500).json({
-            error: "Archivist AI failed to respond.",
-            details: err.message
+            errorType: err.name || "UnknownError",
+            errorMessage: err.message || "Archivist AI failed to respond"
         });
     }
 }
