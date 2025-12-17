@@ -1,8 +1,9 @@
 // api/generate-fragment.js
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const MODEL_NAME = "gemini-2.0-flash"; // Standard naming, update if using a specific preview
+const MODEL_NAME = "gemini-2.0-flash"; // Current recommended model
 
+// --- Helper: Parse AI Response ---
 function parseAIResponse(raw) {
     if (!raw) throw new Error("Empty AI response");
     try {
@@ -16,34 +17,45 @@ function parseAIResponse(raw) {
     }
 }
 
+// --- Serverless Handler ---
 export default async function handler(req, res) {
     if (req.method !== "POST") {
-        return res.status(405).json({ errorType: "MethodNotAllowed", errorMessage: "Only POST requests are allowed." });
+        return res.status(405).json({ 
+            errorType: "MethodNotAllowed", 
+            errorMessage: "Only POST requests are allowed." 
+        });
     }
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-        return res.status(500).json({ errorType: "MissingAPIKey", errorMessage: "GEMINI_API_KEY is missing." });
+        return res.status(500).json({ 
+            errorType: "MissingAPIKey", 
+            errorMessage: "GEMINI_API_KEY is missing from environment variables." 
+        });
     }
 
-    // contextHistory will be an array of previous strings
     const { secretTag, difficultyTier, genre, contextHistory = [] } = req.body;
     
     if (!secretTag || difficultyTier === undefined) {
-        return res.status(400).json({ errorType: "InvalidRequest", errorMessage: "Missing secretTag or difficultyTier." });
+        return res.status(400).json({ 
+            errorType: "InvalidRequest", 
+            errorMessage: "Missing required fields: secretTag or difficultyTier." 
+        });
     }
 
-    const genAI = new GoogleGenAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: MODEL_NAME });
+    try {
+        // FIX: Initialize the SDK correctly
+        // The constructor takes the API Key as a direct string: new GoogleGenerativeAI("YOUR_KEY")
+        const genAI = new GoogleGenerativeAI(apiKey);
+        const model = genAI.getGenerativeModel({ model: MODEL_NAME });
 
-    // Determine if we are in Story Mode based on if context exists
-    const isStoryMode = contextHistory.length > 0;
-    const historyText = isStoryMode 
-        ? `\nSTORY CONTEXT (Previous Events):\n${contextHistory.map((text, i) => `Part ${i+1}: ${text}`).join('\n')}\n`
-        : "";
+        const isStoryMode = contextHistory.length > 0;
+        const historyText = isStoryMode 
+            ? `\nSTORY CONTEXT (Previous Events):\n${contextHistory.map((text, i) => `Part ${i+1}: ${text}`).join('\n')}\n`
+            : "";
 
-    const prompt = `
-You are the Archivist of Moirai. 
+        const prompt = `
+You are the Archivist of Moirai.
 
 Generate a short narrative fragment (100–150 words) in the following setting:
 GENRE: ${genre || "Random"}
@@ -52,21 +64,20 @@ Secret Causal Force (SECRET_TAG): ${secretTag}
 Difficulty Tier: ${difficultyTier}
 
 Rules:
-- ${isStoryMode ? "This is a CONTINUATION. You must follow the characters, plot, and tone established in the STORY CONTEXT above." : "This is a STANDALONE fragment."}
+- ${isStoryMode ? "CONTINUATION: You MUST follow the plot and characters established in the STORY CONTEXT." : "STANDALONE: Create a new, unique scenario."}
 - The fragment must fit the specified GENRE perfectly.
-- Subtly embed the causal force (${secretTag}) into the narrative.
-- Tone and complexity must match Difficulty Tier ${difficultyTier}.
+- Subtly embed the causal force (${secretTag}).
+- Tone and complexity must match the difficulty tier.
 - Do NOT explain the secret directly in the fragment text.
-- Provide a brief revelation (revelationText) explaining how ${secretTag} was the hidden driver of this specific fragment.
+- Provide a brief revelation explaining how the causal force was at work.
 
-Return ONLY a valid JSON object:
+Return ONLY a valid JSON object in this exact format:
 {
   "fragmentText": "string",
   "revelationText": "string"
 }
 `;
 
-    try {
         const result = await model.generateContent({
             contents: [{ role: "user", parts: [{ text: prompt }] }],
             generationConfig: { 
@@ -75,8 +86,9 @@ Return ONLY a valid JSON object:
             }
         });
 
-        const response = await result.response;
-        const data = parseAIResponse(response.text());
+        // Extract text from the result
+        const rawText = result.response.text();
+        const data = parseAIResponse(rawText);
 
         if (!data.fragmentText || !data.revelationText) {
             throw new Error("AI returned JSON missing required keys");
