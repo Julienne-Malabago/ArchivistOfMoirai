@@ -89,20 +89,21 @@ No markdown. No commentary. No extra text.
     } catch (err) {
         console.error("ARCHIVIST AI ERROR:", err);
 
-        // If the error is from the Gemini API (ApiError), extract details
+        // Check if it's an ApiError from Gemini
         if (err?.error) {
             const aiError = err.error;
-            return res.status(err.status || 500).json({
+            return res.status(err.status || 200).json({
                 errorType: aiError.code || "ApiError",
                 errorMessage: aiError.message || "AI returned an error",
+                details: aiError.details || null,
                 retryAfter: aiError.details?.[2]?.retryDelay || null
             });
         }
 
-        // Otherwise, return generic error
-        return res.status(500).json({
+        // For other errors, return their actual error info
+        return res.status(err.status || 200).json({
             errorType: err.name || "UnknownError",
-            errorMessage: err.message || "Archivist AI failed to respond"
+            errorMessage: err.message || "An unknown error occurred"
         });
     }
 }
