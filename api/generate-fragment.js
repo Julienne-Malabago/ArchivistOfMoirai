@@ -70,7 +70,6 @@ No markdown. No commentary. No extra text.
 
         const data = parseAIResponse(rawText);
 
-        // Ensure keys exist
         if (!data.fragmentText || !data.revelationText) {
             throw new Error("AI returned JSON missing required keys");
         }
@@ -79,6 +78,15 @@ No markdown. No commentary. No extra text.
 
     } catch (err) {
         console.error("ARCHIVIST AI ERROR:", err);
+
+        // Check if the error is a service unavailable / 503 type
+        if (err?.message?.includes("503") || err?.message?.toLowerCase().includes("service unavailable")) {
+            return res.status(503).json({
+                error: "Archivist AI service is temporarily unavailable.",
+                details: err.message
+            });
+        }
+
         return res.status(500).json({
             error: "Archivist AI failed to respond.",
             details: err.message
