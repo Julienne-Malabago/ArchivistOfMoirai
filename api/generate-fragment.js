@@ -7,13 +7,27 @@ const client = new GoogleGenAI({
 
 const MODEL_NAME = "gemini-2.5-flash";
 
+/**
+ * Safely extract and parse JSON from Gemini output,
+ * even if it is wrapped in markdown (```json ... ```).
+ */
+function extractJson(text) {
+    const match = text.match(/\{[\s\S]*\}/);
+    if (!match) {
+        throw new Error("No valid JSON object found in Gemini response");
+    }
+    return JSON.parse(match[0]);
+}
+
 export default async function handler(req, res) {
+    // Allow POST only
     if (req.method !== "POST") {
         return res.status(405).json({ error: "Method Not Allowed" });
     }
 
     const { secretTag, difficultyTier } = req.body;
 
+    // Validate request body
     if (!secretTag || !difficultyTier) {
         return res.status(400).json({ error: "Missing required fields." });
     }
@@ -21,11 +35,17 @@ export default async function handler(req, res) {
     try {
         const response = await client.models.generateContent({
             model: MODEL_NAME,
-            contents: [{
-                role: "user",
-                parts: [{
-                    text: `
-Return ONLY valid JSON in this exact format:
+            contents: [
+                {
+                    role: "user",
+                    parts: [
+                        {
+                            text: `
+Return ONLY valid JSON.
+Do NOT use markdown.
+Do NOT wrap the output in \`\`\`.
+
+The JSON MUST follow this exact structure:
 {
   "fragmentText": "string",
   "revelationText": "string"
@@ -34,8 +54,10 @@ Return ONLY valid JSON in this exact format:
 SECRET_TAG: ${secretTag}
 DIFFICULTY: ${difficultyTier}
 `
-                }]
-            }],
+                        }
+                    ]
+                }
+            ],
         });
 
         const rawText =
@@ -45,7 +67,9 @@ DIFFICULTY: ${difficultyTier}
             throw new Error("Empty response from Gemini");
         }
 
-        const data = JSON.parse(rawText);
+        // ✅ Safe parsing (handles ```json ... ```)
+        const data = extractJson(rawText);
+
         return res.status(200).json(data);
 
     } catch (err) {
