@@ -8,55 +8,81 @@ const client = new GoogleGenAI({
 const MODEL_NAME = "gemini-2.5-flash";
 
 /**
- * Safely extract and parse JSON from Gemini output,
- * even if it is wrapped in markdown (```json ... ```).
+ * Safely extract JSON even if Gemini wraps it in ```json blocks
  */
 function extractJson(text) {
     const match = text.match(/\{[\s\S]*\}/);
     if (!match) {
-        throw new Error("No valid JSON object found in Gemini response");
+        throw new Error("No valid JSON found in Gemini response");
     }
     return JSON.parse(match[0]);
 }
 
 export default async function handler(req, res) {
-    // Allow POST only
+    // --- METHOD CHECK ---
     if (req.method !== "POST") {
         return res.status(405).json({ error: "Method Not Allowed" });
     }
 
-    const { secretTag, difficultyTier } = req.body;
-
-    // Validate request body
-    if (!secretTag || !difficultyTier) {
-        return res.status(400).json({ error: "Missing required fields." });
+    // --- ENV CHECK ---
+    if (!process.env.GEMINI_API_KEY) {
+        console.error("CRITICAL: GEMINI_API_KEY missing");
+        return res.status(500).json({
+            error: "Server configuration error: Missing GEMINI_API_KEY",
+        });
     }
 
+    const { secretTag, difficultyTier, genre } = req.body;
+
+    // --- INPUT VALIDATION ---
+    if (!secretTag || difficultyTier === undefined) {
+        return res.status(400).json({
+            error: "Missing required fields: secretTag or difficultyTier",
+        });
+    }
+
+    const activeGenre =
+        genre && genre !== "Random"
+            ? genre
+            : "a randomly chosen literary genre";
+
+    // --- PROMPT (MERGED FROM YOUR CODE, CLEANED) ---
+    const prompt = `
+You are the Archivist of Moirai, a narrative AI.
+
+Your task is to generate a short story fragment (100–150 words)
+that subtly embeds a hidden causal force.
+
+Instructions:
+1. Genre: ${activeGenre}
+2. SECRET_TAG (true causal force): ${secretTag}
+3. Difficulty Tier: ${difficultyTier}
+   - Higher tiers should be more subtle and ambiguous.
+4. The fragment must feel natural and literary.
+5. Do NOT mention SECRET_TAG explicitly in the fragment.
+
+After the fragment, explain the causal force clearly.
+
+Return ONLY a JSON object.
+Do NOT use markdown.
+Do NOT wrap in \`\`\`.
+
+The JSON MUST follow this exact structure:
+{
+  "fragmentText": "A short narrative fragment (100–150 words)",
+  "revelationText": "A concise explanation (1–2 sentences) revealing why ${secretTag} is the true causal force."
+}
+`;
+
     try {
+        // --- GEMINI CALL ---
         const response = await client.models.generateContent({
             model: MODEL_NAME,
             contents: [
                 {
                     role: "user",
-                    parts: [
-                        {
-                            text: `
-Return ONLY valid JSON.
-Do NOT use markdown.
-Do NOT wrap the output in \`\`\`.
-
-The JSON MUST follow this exact structure:
-{
-  "fragmentText": "string",
-  "revelationText": "string"
-}
-
-SECRET_TAG: ${secretTag}
-DIFFICULTY: ${difficultyTier}
-`
-                        }
-                    ]
-                }
+                    parts: [{ text: prompt }],
+                },
             ],
         });
 
@@ -67,8 +93,12 @@ DIFFICULTY: ${difficultyTier}
             throw new Error("Empty response from Gemini");
         }
 
-        // ✅ Safe parsing (handles ```json ... ```)
         const data = extractJson(rawText);
+
+        // --- FINAL VALIDATION ---
+        if (!data.fragmentText || !data.revelationText) {
+            throw new Error("AI response missing required fields");
+        }
 
         return res.status(200).json(data);
 
