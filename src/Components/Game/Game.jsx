@@ -1,13 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
-import { auth, db } from "../../firebase";
+import { db } from "../../firebase";
 import { fetchFragmentFromAI } from "../../api/ai";
 
-// Constant for the Session Storage key
 const GAME_SESSION_KEY = "moirai_game_session";
 
 export function Game({ user, onSignOut }) {
-    // --- Game & User Stats ---
+    // --- State ---
     const [stats, setStats] = useState({
         username: 'The Archivist',
         currentScore: 0,
@@ -19,230 +18,72 @@ export function Game({ user, onSignOut }) {
         totalIncorrect: 0,
     });
 
-    const [gameState, setGameState] = useState('loading'); // 'loading', 'playing', 'revealing', 'error', 'ready_to_start'
+    const [gameState, setGameState] = useState('loading'); // loading, ready_to_start, playing, revealing, error
     const [currentFragment, setCurrentFragment] = useState("");
-    const [userClassification, setUserClassification] = useState(null);
     const [secretTag, setSecretTag] = useState(null);
     const [revelationText, setRevelationText] = useState(null);
     const [errorMessage, setErrorMessage] = useState(null);
-
     const [attemptCount, setAttemptCount] = useState(0); 
     const [totalRoundsPlayed, setTotalRoundsPlayed] = useState(0);
-    const [initialLoadComplete, setInitialLoadComplete] = useState(false);
-    const [isSessionActive, setIsSessionActive] = useState(false);
-
-    // Genre State
     const [selectedGenre, setSelectedGenre] = useState("Random");
-
+    const [isSessionActive, setIsSessionActive] = useState(false);
+    
+    // UI States
     const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
     const [editProfileOpen, setEditProfileOpen] = useState(false);
-
-    // Edit Profile Fields
     const [newUsername, setNewUsername] = useState("");
-    const [currentPassword, setCurrentPassword] = useState("");
-    const [newPassword, setNewPassword] = useState("");
-    const [confirmNewPassword, setConfirmNewPassword] = useState("");
-
-    const classifierOptions = ['FATE', 'CHOICE', 'CHANCE'];
-    const genreOptions = [
-        "Random", "Romance", "Mystery", "Fantasy", 
-        "Sci-Fi", "Horror", "Historical", "Slice of Life"
-    ];
-
     const dropdownRef = useRef(null);
 
-    const showAlert = useCallback((title, message) => {
-        setErrorMessage({ title, message });
-    }, []);
+    const classifierOptions = ['FATE', 'CHOICE', 'CHANCE'];
+    const genreOptions = ["Random", "Romance", "Mystery", "Fantasy", "Sci-Fi", "Horror", "Historical", "Slice of Life"];
 
+    // --- Derived Values ---
+    const displayAttemptCount = attemptCount + 1;
     const totalAttempts = stats.totalCorrect + stats.totalIncorrect;
-    const accuracyRate = totalAttempts > 0
-        ? ((stats.totalCorrect / totalAttempts) * 100).toFixed(1)
-        : '0.0';
+    const accuracyRate = totalAttempts > 0 ? ((stats.totalCorrect / totalAttempts) * 100).toFixed(1) : '0';
 
-    const displayAttemptCount = attemptCount + 1; 
-
-    // --- Close dropdown on outside click ---
-    useEffect(() => {
-        const handleClickOutside = (event) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-                setProfileDropdownOpen(false);
-            }
-        };
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, []);
-
-    // --- Update Stats in Firestore ---
+    // --- Core Logic ---
     const updateStatsInDb = useCallback(async (newStats, roundsPlayed) => {
-        if (!user || !user.uid) return;
-        const userDocRef = doc(db, "users", user.uid);
+        if (!user) return;
         try {
-            await updateDoc(userDocRef, {
-                currentScore: newStats.currentScore,
-                currentStreak: newStats.currentStreak,
-                highestStreak: newStats.highestStreak,
-                difficultyTier: newStats.difficultyTier,
-                highestScore: newStats.highestScore,
-                totalRoundsPlayed: roundsPlayed,
-                totalCorrect: newStats.totalCorrect,
-                totalIncorrect: newStats.totalIncorrect,
+            await updateDoc(doc(db, "users", user.uid), {
+                ...newStats,
+                totalRoundsPlayed: roundsPlayed
             });
-        } catch (error) {
-            console.error("Error updating stats in Firestore:", error);
-        }
+        } catch (e) { console.error("Database sync failed", e); }
     }, [user]);
 
-    // --- Start New Round / Next Fragment ---
-    const startNewRound = useCallback(async (currentDifficulty) => {
+    const startNewRound = useCallback(async () => {
         setGameState('loading');
         setErrorMessage(null);
-        setUserClassification(null);
-        setRevelationText(null);
         setCurrentFragment("");
     
-        const effectiveDifficulty = currentDifficulty || stats.difficultyTier;
-        const randomSecretTag = classifierOptions[Math.floor(Math.random() * classifierOptions.length)];
+        const randomTag = classifierOptions[Math.floor(Math.random() * 3)];
     
         try {
-            const { fragmentText, revelationText: revText } = await fetchFragmentFromAI(
-                effectiveDifficulty, 
-                randomSecretTag,
-                selectedGenre
-            );
+            // CALLING THE UPDATED UTILITY
+            const data = await fetchFragmentFromAI(stats.difficultyTier, randomTag, selectedGenre);
     
-            const nextAttemptCount = attemptCount === 4 ? 0 : attemptCount + 1;
-            
-            setAttemptCount(nextAttemptCount);
-            if (nextAttemptCount === 0) {
-                setTotalRoundsPlayed(prev => prev + 1);
-            }
-    
-            setSecretTag(randomSecretTag);
-            setCurrentFragment(fragmentText);
-            setRevelationText(revText);
+            const nextAttempt = attemptCount === 4 ? 0 : attemptCount + 1;
+            setAttemptCount(nextAttempt);
+            if (nextAttempt === 0) setTotalRoundsPlayed(prev => prev + 1);
+
+            setSecretTag(randomTag);
+            setCurrentFragment(data.fragmentText);
+            setRevelationText(data.revelationText);
             setGameState('playing');
-            
         } catch (error) {
-            console.error("Fragment generation failed:", error);
             setGameState('error');
-            showAlert("AI Generation Error", error.message || "Failed to generate fragment.");
+            setErrorMessage({ title: "Archival Link Severed", message: error.message });
         }
-    }, [stats.difficultyTier, attemptCount, selectedGenre, showAlert]);
+    }, [stats.difficultyTier, attemptCount, selectedGenre]);
 
-    // --- Load User Stats & Session ---
-    useEffect(() => {
-        const fetchUserDataAndSession = async () => {
-            if (!user) return;
-            const userDocRef = doc(db, "users", user.uid);
-            let permanentStats = {};
-            let sessionFound = false;
-            
-            try {
-                const docSnap = await getDoc(userDocRef);
-                if (docSnap.exists()) {
-                    permanentStats = docSnap.data();
-                    setTotalRoundsPlayed(permanentStats.totalRoundsPlayed || 0);
-                    setStats(s => ({
-                        ...s,
-                        username: permanentStats.username || 'The Archivist',
-                        highestStreak: permanentStats.highestStreak || 0,
-                        difficultyTier: permanentStats.difficultyTier || 1,
-                        highestScore: permanentStats.highestScore || 0,
-                        totalCorrect: permanentStats.totalCorrect || 0,
-                        totalIncorrect: permanentStats.totalIncorrect || 0,
-                    }));
-                }
-            } catch (error) {
-                console.error("Error fetching user data:", error);
-                setGameState('error');
-                setInitialLoadComplete(true);
-                return;
-            }
-
-            const storedSession = sessionStorage.getItem(GAME_SESSION_KEY);
-            if (storedSession) {
-                try {
-                    const sessionData = JSON.parse(storedSession);
-                    if (sessionData.userId === user.uid) {
-                        sessionFound = true;
-                        setIsSessionActive(true);
-                    }
-                } catch (e) {
-                    sessionStorage.removeItem(GAME_SESSION_KEY);
-                }
-            }
-
-            setInitialLoadComplete(true);
-            if (!sessionFound) setGameState('ready_to_start');
-        };
-
-        fetchUserDataAndSession();
-    }, [user, showAlert]);
-
-    // --- Persist Session to Storage ---
-    useEffect(() => {
-        if (user && (gameState === 'playing' || gameState === 'revealing')) {
-            const sessionData = {
-                userId: user.uid,
-                currentFragment,
-                secretTag,
-                revelationText,
-                gameState,
-                attemptCount,
-                totalRoundsPlayed,
-                selectedGenre,
-                currentScore: stats.currentScore,
-                currentStreak: stats.currentStreak,
-                difficultyTier: stats.difficultyTier,
-                highestScore: stats.highestScore,
-                highestStreak: stats.highestStreak,
-            };
-            sessionStorage.setItem(GAME_SESSION_KEY, JSON.stringify(sessionData));
-        }
-    }, [user, gameState, currentFragment, secretTag, revelationText, attemptCount, totalRoundsPlayed, stats, selectedGenre]);
-
-    // --- Resume/New Game Handlers ---
-    const resumeSession = () => {
-        const storedSession = sessionStorage.getItem(GAME_SESSION_KEY);
-        if (!storedSession) { startNewGame(); return; }
-        const data = JSON.parse(storedSession);
-        
-        setCurrentFragment(data.currentFragment);
-        setSecretTag(data.secretTag);
-        setRevelationText(data.revelationText);
-        setGameState(data.gameState);
-        setAttemptCount(data.attemptCount);
-        setTotalRoundsPlayed(data.totalRoundsPlayed);
-        setSelectedGenre(data.selectedGenre || "Random");
-        setStats(prev => ({
-            ...prev,
-            currentScore: data.currentScore,
-            currentStreak: data.currentStreak,
-            difficultyTier: data.difficultyTier,
-            highestScore: data.highestScore,
-            highestStreak: data.highestStreak,
-        }));
-        setIsSessionActive(false); 
-    };
-
-    const startNewGame = () => {
-        sessionStorage.removeItem(GAME_SESSION_KEY);
-        setStats(prev => ({ ...prev, currentScore: 0, currentStreak: 0 }));
-        setAttemptCount(0);
-        setIsSessionActive(false);
-        setGameState('ready_to_start');
-    };
-
-    // --- Gameplay Handlers ---
     const handleClassification = (choice) => {
         if (gameState !== 'playing') return;
-        setUserClassification(choice);
         setGameState('revealing');
 
         const isCorrect = choice === secretTag;
-        let newStats = { ...stats };
-        let promotionMessage = null;
+        const newStats = { ...stats };
 
         if (isCorrect) {
             newStats.currentScore += 10;
@@ -250,11 +91,7 @@ export function Game({ user, onSignOut }) {
             newStats.totalCorrect += 1;
             if (newStats.currentStreak > newStats.highestStreak) newStats.highestStreak = newStats.currentStreak;
             if (newStats.currentScore > newStats.highestScore) newStats.highestScore = newStats.currentScore;
-            
-            if (newStats.currentStreak > 0 && newStats.currentStreak % 5 === 0) {
-                newStats.difficultyTier += 1;
-                promotionMessage = `Archivist Promotion! Difficulty Tier is now ${newStats.difficultyTier}.`;
-            }
+            if (newStats.currentStreak % 5 === 0) newStats.difficultyTier += 1;
         } else {
             newStats.currentStreak = 0;
             newStats.totalIncorrect += 1;
@@ -262,50 +99,58 @@ export function Game({ user, onSignOut }) {
 
         setStats(newStats);
         updateStatsInDb(newStats, totalRoundsPlayed);
-        if (promotionMessage) showAlert("Promotion Achieved", promotionMessage);
     };
 
-    // --- Profile & Sign Out Handlers ---
-    const handleSignOut = useCallback(async () => {
-        sessionStorage.removeItem(GAME_SESSION_KEY);
-        const finalStats = { ...stats, currentScore: 0, currentStreak: 0 };
-        await updateStatsInDb(finalStats, totalRoundsPlayed); 
-        onSignOut();
-    }, [stats, onSignOut, updateStatsInDb, totalRoundsPlayed]);
+    // --- Persistence & Lifecycle ---
+    useEffect(() => {
+        const loadUser = async () => {
+            if (!user) return;
+            const docSnap = await getDoc(doc(db, "users", user.uid));
+            if (docSnap.exists()) {
+                const d = docSnap.data();
+                setStats(prev => ({ ...prev, ...d }));
+                setTotalRoundsPlayed(d.totalRoundsPlayed || 0);
+            }
+            
+            const saved = sessionStorage.getItem(GAME_SESSION_KEY);
+            if (saved) {
+                const data = JSON.parse(saved);
+                if (data.userId === user.uid) setIsSessionActive(true);
+            }
+            setGameState(saved ? 'loading' : 'ready_to_start');
+        };
+        loadUser();
+    }, [user]);
 
-    const handleUsernameChange = async () => {
-        if (!newUsername.trim()) return;
-        try {
-            await updateDoc(doc(db, "users", user.uid), { username: newUsername.trim() });
-            setStats(prev => ({ ...prev, username: newUsername.trim() }));
-            setEditProfileOpen(false);
-            showAlert("Success", "Username updated.");
-        } catch (e) { showAlert("Error", "Failed to update username."); }
+    useEffect(() => {
+        if (user && (gameState === 'playing' || gameState === 'revealing')) {
+            sessionStorage.setItem(GAME_SESSION_KEY, JSON.stringify({
+                userId: user.uid, currentFragment, secretTag, revelationText, 
+                gameState, attemptCount, totalRoundsPlayed, selectedGenre, ...stats
+            }));
+        }
+    }, [user, gameState, currentFragment, secretTag, revelationText, attemptCount, totalRoundsPlayed, stats, selectedGenre]);
+
+    const resumeSession = () => {
+        const data = JSON.parse(sessionStorage.getItem(GAME_SESSION_KEY));
+        setCurrentFragment(data.currentFragment);
+        setSecretTag(data.secretTag);
+        setRevelationText(data.revelationText);
+        setGameState(data.gameState);
+        setAttemptCount(data.attemptCount);
+        setSelectedGenre(data.selectedGenre || "Random");
+        setIsSessionActive(false);
     };
 
-    // --- Render Helpers ---
-    if (gameState === 'loading' && !initialLoadComplete) {
-        return (
-            <div className="game-container fullscreen-layout">
-                <div className="loading-spinner">
-                    <p>Accessing the Archives and Loading User Profile...</p>
-                </div>
-            </div>
-        );
-    }
-
+    // --- Render ---
     if (isSessionActive) {
         return (
             <div className="game-container fullscreen-layout">
-                <div className="custom-modal-overlay">
-                    <div className="custom-modal-content session-prompt">
-                        <h3>Archival Session Detected ⏳</h3>
-                        <p>A previous game session was found (Attempt {displayAttemptCount}/5).</p>
-                        <div className="button-group">
-                            <button onClick={resumeSession} className="button-primary">Resume Session</button>
-                            <button onClick={startNewGame} className="button-primary button-danger">Start New Game</button>
-                        </div>
-                    </div>
+                <div className="custom-modal-content session-prompt">
+                    <h3>📜 Session Restored</h3>
+                    <p>Continue your previous investigation?</p>
+                    <button onClick={resumeSession} className="button-primary">Resume</button>
+                    <button onClick={() => { sessionStorage.removeItem(GAME_SESSION_KEY); setIsSessionActive(false); setGameState('ready_to_start'); }} className="button-primary button-danger">New Game</button>
                 </div>
             </div>
         );
@@ -313,109 +158,83 @@ export function Game({ user, onSignOut }) {
 
     return (
         <div className="game-container">
-            {/* Error Modal */}
-            {errorMessage && (
-                <div className="custom-modal-overlay">
-                    <div className="custom-modal-content">
-                        <h3>{errorMessage.title}</h3>
-                        <p>{errorMessage.message}</p>
-                        <button onClick={() => setErrorMessage(null)} className="button-primary">Acknowledge</button>
-                    </div>
-                </div>
-            )}
-
             {/* Header */}
-            <header className="game-header ribbon-layout" style={{ position: 'relative' }}>
+            <header className="game-header ribbon-layout">
                 <div className="header-left ribbon-left">
-                    <div className="title-block">
-                        <span className="star-icon">✨</span>
-                        <h1 className="game-title">ARCHIVIST OF MOIRAI</h1>
-                    </div>
+                    <span className="star-icon">✨</span>
+                    <h1 className="game-title">ARCHIVIST OF MOIRAI</h1>
                 </div>
-
                 <div className="header-right ribbon-right" ref={dropdownRef}>
                     <span className="profile-icon" onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}>📜</span>
                     {profileDropdownOpen && (
-                        <div className="dropdown-menu" style={{
-                            position: 'absolute', top: '100%', right: 0, background: '#1a1a1a', 
-                            border: '1px solid #444', padding: '1rem', zIndex: 100, minWidth: '200px'
-                        }}>
+                        <div className="dropdown-menu">
                             <p><strong>{stats.username}</strong></p>
-                            <button onClick={() => {setEditProfileOpen(true); setProfileDropdownOpen(false);}} className="dropdown-btn">🪶 Edit Profile</button>
-                            <button onClick={handleSignOut} className="dropdown-btn">🗝️ Log Out</button>
+                            <button onClick={() => setEditProfileOpen(true)}>🪶 Edit Name</button>
+                            <button onClick={onSignOut}>🗝️ Log Out</button>
                         </div>
                     )}
                 </div>
             </header>
 
-            {/* Metrics Tally */}
+            {/* Metrics Tally with Missing Icons Restored */}
             <div className="metrics-tally">
-                <div className="metric"><span className="metric-icon">#</span><p className="metric-label">Rounds:</p><p className="metric-value">{totalRoundsPlayed}</p></div>
-                <div className="metric"><span className="metric-icon">🎯</span><p className="metric-label">Attempt:</p><p className="metric-value">{displayAttemptCount}/5</p></div>
-                <div className="metric"><span className="metric-icon">⚡</span><p className="metric-label">Score:</p><p className="metric-value">{stats.currentScore}</p></div>
-                <div className="metric"><span className="metric-icon">⭐</span><p className="metric-label">High:</p><p className="metric-value">{stats.highestScore}</p></div>
-                <div className="metric"><span className="metric-icon">❤</span><p className="metric-label">Streak:</p><p className="metric-value">{stats.currentStreak}</p></div>
-                <div className="metric"><span className="metric-icon">🏆</span><p className="metric-label">Best Streak:</p><p className="metric-value">{stats.highestStreak}</p></div>
-                <div className="metric"><span className="metric-icon">🎖️</span><p className="metric-label">Tier:</p><p className="metric-value">{stats.difficultyTier}</p></div>
-                <div className="metric"><span className="metric-icon">✅</span><p className="metric-label">Correct:</p><p className="metric-value">{stats.totalCorrect}</p></div>
-                <div className="metric"><span className="metric-icon">🎯</span><p className="metric-label">Accuracy:</p><p className="metric-value">{accuracyRate}%</p></div>
+                <div className="metric"><span className="metric-icon">#</span><p>{totalRoundsPlayed}</p></div>
+                <div className="metric"><span className="metric-icon">🎯</span><p>{displayAttemptCount}/5</p></div>
+                <div className="metric"><span className="metric-icon">⚡</span><p>{stats.currentScore}</p></div>
+                <div className="metric"><span className="metric-icon">⭐</span><p>{stats.highestScore}</p></div>
+                <div className="metric"><span className="metric-icon">❤</span><p>{stats.currentStreak}</p></div>
+                <div className="metric"><span className="metric-icon">🏆</span><p>{stats.highestStreak}</p></div>
+                <div className="metric"><span className="metric-icon">🎖️</span><p>{stats.difficultyTier}</p></div>
+                <div className="metric"><span className="metric-icon">✅</span><p>{accuracyRate}%</p></div>
             </div>
 
-            {/* Main Gameplay Area */}
+            {/* Content Switcher */}
             {gameState === 'ready_to_start' ? (
-                <div className="start-game-section archival-scroll" style={{textAlign: 'center'}}>
-                    <h3 className="scroll-title">Select Genre for This Round</h3>
-                    <div className="genre-selector" style={{display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center', margin: '20px'}}>
+                <div className="archival-scroll start-section">
+                    <h2 className="scroll-title">Choose a Literary Thread</h2>
+                    <div className="genre-selector">
                         {genreOptions.map(g => (
-                            <button key={g} className={`genre-button ${selectedGenre === g ? 'selected' : ''}`} onClick={() => setSelectedGenre(g)}>
+                            <button key={g} className={`genre-button ${selectedGenre === g ? 'active' : ''}`} onClick={() => setSelectedGenre(g)}>
                                 {g}
                             </button>
                         ))}
                     </div>
-                    <button className="button-primary" onClick={() => startNewRound(stats.difficultyTier)}>Start Round</button>
+                    <button className="button-primary start-btn" onClick={startNewRound}>Open the Archives</button>
                 </div>
             ) : (
-                <>
-                    <div className="archival-scroll fragment-container">
-                        <h3 className="scroll-title">The Archival Scroll (Fragment)</h3>
-                        <p className="scroll-fragment fragment-text">
-                            {gameState === 'loading' ? "Accessing the Stream..." : currentFragment}
-                        </p>
-                    </div>
+                <div className="archival-scroll">
+                    <h3 className="scroll-title">The Fragment</h3>
+                    <p className="scroll-fragment">
+                        {gameState === 'loading' ? "Whispering to the Fates..." : currentFragment}
+                    </p>
 
                     {gameState === 'playing' && (
                         <div className="classification-buttons">
-                            <h3 className="classifier-title">Classify the Causal Force:</h3>
-                            <div className="classifier-buttons-row">
-                                {classifierOptions.map(option => (
-                                    <button key={option} className="classifier-button" onClick={() => handleClassification(option)}>
-                                        {option}
-                                    </button>
-                                ))}
-                            </div>
+                            {classifierOptions.map(opt => (
+                                <button key={opt} className="classifier-button" onClick={() => handleClassification(opt)}>{opt}</button>
+                            ))}
                         </div>
                     )}
 
-                    {(gameState === 'revealing' || gameState === 'error') && (
-                        <div className="revelation-panel archival-scroll">
-                            <h3 className="revelation-title">Revelation: {secretTag}</h3>
+                    {gameState === 'revealing' && (
+                        <div className="revelation-panel">
+                            <h3 className="revelation-title">Force Identified: {secretTag}</h3>
                             <p className="revelation-text">{revelationText}</p>
-                            <button className="button-primary" onClick={() => startNewRound(stats.difficultyTier)}>
+                            <button className="button-primary" onClick={startNewRound}>
                                 {attemptCount === 0 ? "Begin Next Round" : "Next Fragment"}
                             </button>
                         </div>
                     )}
-                </>
+                </div>
             )}
 
-            {/* Edit Profile Modal */}
-            {editProfileOpen && (
+            {/* Modals */}
+            {errorMessage && (
                 <div className="custom-modal-overlay">
-                    <div className="custom-modal-content edit-profile-modal">
-                        <h3>Edit Profile</h3>
-                        <input type="text" placeholder="New Username" value={newUsername} onChange={e => setNewUsername(e.target.value)} />
-                        <button className="button-primary" onClick={handleUsernameChange}>Save</button>
-                        <button className="button-primary button-danger" onClick={() => setEditProfileOpen(false)}>Close</button>
+                    <div className="custom-modal-content">
+                        <h3>{errorMessage.title}</h3>
+                        <p>{errorMessage.message}</p>
+                        <button onClick={() => setGameState('ready_to_start')} className="button-primary">Return</button>
                     </div>
                 </div>
             )}
