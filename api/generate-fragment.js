@@ -1,57 +1,61 @@
-import { GoogleGenerativeAI } from "@google/generative-ai"; // Correct package import
+// api/generate-fragment.js
+import { GoogleGenAI } from "@google/genai";
 import * as dotenv from "dotenv";
 
 dotenv.config();
 
-// Use a valid model name
-const MODEL_NAME = "gemini-1.5-flash"; 
+// Use the new SDK's client structure
+const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const MODEL_NAME = "gemini-2.5-flash"; 
 
 export default async function handler(req, res) {
+    // Only allow POST
     if (req.method !== "POST") {
         return res.status(405).json({ error: "Method Not Allowed" });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-        return res.status(500).json({ error: "Server configuration error: GEMINI_API_KEY is missing." });
-    }
-
-    // 1. Initialize the SDK correctly
-    const genAI = new GoogleGenerativeAI(apiKey);
-    
-    // 2. Get the model instance
-    const model = genAI.getGenerativeModel({
-        model: MODEL_NAME,
-        generationConfig: {
-            responseMimeType: "application/json",
-        },
-    });
-
     const { secretTag, difficultyTier } = req.body;
 
-    const prompt = `
-        You are the Archivist of Moirai. Generate a short story fragment.
-        SECRET_TAG: ${secretTag}
-        DIFFICULTY: ${difficultyTier}
-        
-        Return JSON with keys: "fragmentText" and "revelationText".
-    `;
+    // Validation
+    if (!secretTag || !difficultyTier) {
+        return res.status(400).json({ error: "Missing required fields." });
+    }
 
     try {
-        // 3. Use the correct method: generateContent
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        const text = response.text();
-        
-        // Since you set responseMimeType: "application/json", 
-        // Gemini returns a string that is already valid JSON.
-        const data = JSON.parse(text);
+        // Use the modern SDK call
+        const response = await client.models.generateContent({
+            model: MODEL_NAME,
+            contents: [{
+                role: "user",
+                parts: [{ 
+                    text: `You are the Archivist of Moirai. Generate a story fragment. 
+                           SECRET_TAG: ${secretTag}, Difficulty: ${difficultyTier}. 
+                           Return ONLY valid JSON.` 
+                }]
+            }],
+            config: {
+                // The 2.5 models handle structured output natively
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: "object",
+                    properties: {
+                        fragmentText: { type: "string" },
+                        revelationText: { type: "string" }
+                    },
+                    required: ["fragmentText", "revelationText"]
+                }
+            }
+        });
 
+        // The response.text property in the new SDK is already a string
+        const data = JSON.parse(response.text);
         return res.status(200).json(data);
+
     } catch (err) {
-        console.error("GenAI API Error:", err);
-        return res.status(500).json({
-            error: `GenAI API call failed: ${err.message}`
+        console.error("GenAI Error:", err);
+        return res.status(500).json({ 
+            error: "Archivist AI failed to respond.", 
+            details: err.message 
         });
     }
 }
