@@ -8,10 +8,8 @@ function parseAIResponse(raw) {
     if (!raw) throw new Error("Empty AI response");
 
     try {
-        // Strict JSON parse
         return JSON.parse(raw);
     } catch {
-        // Fallback: remove markdown fences and extra text
         const cleaned = raw.replace(/```json|```/g, "").trim();
         const start = cleaned.indexOf("{");
         const end = cleaned.lastIndexOf("}") + 1;
@@ -91,7 +89,17 @@ No markdown. No commentary. No extra text.
     } catch (err) {
         console.error("ARCHIVIST AI ERROR:", err);
 
-        // Return the actual error type and message
+        // If the error is from the Gemini API (ApiError), extract details
+        if (err?.error) {
+            const aiError = err.error;
+            return res.status(err.status || 500).json({
+                errorType: aiError.code || "ApiError",
+                errorMessage: aiError.message || "AI returned an error",
+                retryAfter: aiError.details?.[2]?.retryDelay || null
+            });
+        }
+
+        // Otherwise, return generic error
         return res.status(500).json({
             errorType: err.name || "UnknownError",
             errorMessage: err.message || "Archivist AI failed to respond"
