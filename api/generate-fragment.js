@@ -7,33 +7,27 @@ import { GoogleGenAI } from "@google/genai";
 const MODEL_NAME = "gemini-2.5-flash";
 
 // ================================
-// SAFE JSON EXTRACTOR (NO CRASH)
+// STRICT JSON EXTRACTOR (THROWS)
 // ================================
-function extractJsonSafe(text) {
+function extractJsonStrict(text) {
+    if (!text) {
+        throw new Error("Empty AI response");
+    }
+
+    // Remove markdown fences if present
+    const cleaned = text.replace(/```json|```/g, "").trim();
+
+    const start = cleaned.indexOf("{");
+    const end = cleaned.lastIndexOf("}") + 1;
+
+    if (start === -1 || end === -1) {
+        throw new Error("No valid JSON object found in AI response");
+    }
+
     try {
-        if (!text) throw new Error("Empty AI response");
-
-        // Remove markdown fences if present
-        text = text.replace(/```json|```/g, "").trim();
-
-        const start = text.indexOf("{");
-        const end = text.lastIndexOf("}") + 1;
-
-        if (start === -1 || end === -1) {
-            throw new Error("No JSON object found");
-        }
-
-        return JSON.parse(text.substring(start, end));
+        return JSON.parse(cleaned.substring(start, end));
     } catch (err) {
-        console.error("JSON PARSE FAILED:", err.message);
-
-        // 🔐 FAILSAFE LORE (GAME NEVER BREAKS)
-        return {
-            fragmentText:
-                "The Archivist reaches for the fragment, but the parchment fades into silence before the words can be preserved.",
-            revelationText:
-                "The causal force remains obscured, lost in a distortion within the Archive."
-        };
+        throw new Error("Failed to parse JSON: " + err.message);
     }
 }
 
@@ -49,7 +43,7 @@ export default async function handler(req, res) {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
         return res.status(500).json({
-            error: "Server misconfiguration: GEMINI_API_KEY is missing"
+            error: "Server configuration error: GEMINI_API_KEY is missing"
         });
     }
 
@@ -76,7 +70,7 @@ Difficulty Tier: ${difficultyTier}
 
 Rules:
 - The fragment must subtly embed the causal force.
-- Tone and complexity should match the difficulty tier.
+- Tone and complexity must match the difficulty tier.
 - Do NOT explain the secret directly in the fragment.
 - After the fragment, provide a brief revelation explaining the causal force.
 
@@ -104,22 +98,20 @@ No markdown. No commentary. No extra text.
         });
 
         const rawText =
-            response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+            response?.candidates?.[0]?.content?.parts?.[0]?.text;
 
         console.log("GEMINI RAW RESPONSE:", rawText);
 
-        const data = extractJsonSafe(rawText);
+        const data = extractJsonStrict(rawText);
 
         return res.status(200).json(data);
-    } catch (err) {
-        console.error("GENAI FAILURE:", err);
 
-        // Absolute last-resort fallback
-        return res.status(200).json({
-            fragmentText:
-                "A tear runs through the Archive. Ink spills, but meaning refuses to take form.",
-            revelationText:
-                "The Archivist was unable to stabilize the causal thread."
+    } catch (err) {
+        console.error("ARCHIVIST AI ERROR:", err);
+
+        return res.status(500).json({
+            error: "Archivist AI failed to respond.",
+            details: err.message
         });
     }
 }
