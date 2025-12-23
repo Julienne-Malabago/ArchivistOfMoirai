@@ -194,6 +194,68 @@ export function Game({ user, onSignOut }) {
         });
     };
 
+    const handleUsernameChange = async () => {
+        if (!newUsername.trim()) return;
+        try {
+            const userDocRef = doc(db, "users", user.uid);
+            await updateDoc(userDocRef, { username: newUsername.trim() });
+            setStats(prev => ({ ...prev, username: newUsername.trim() }));
+            setEditProfileOpen(false);
+            showAlert("Success", "Username updated.");
+        } catch (e) { showAlert("Error", "Failed to update username."); }
+    };
+
+    const handlePasswordChange = async () => {
+        if (!currentPassword || !newPassword || newPassword !== confirmNewPassword) return;
+        try {
+            const credential = auth.EmailAuthProvider.credential(user.email, currentPassword);
+            await auth.currentUser.reauthenticateWithCredential(credential); 
+            await auth.currentUser.updatePassword(newPassword);
+            setEditProfileOpen(false);
+            showAlert("Success", "Password updated.");
+        } catch (e) { showAlert("Error", e.message); }
+    };
+
+     const dropdownStyles = {
+        position: 'absolute', top: 'calc(100% + 8px)', right: 0,
+        background: '#1a1a1a', border: '1px solid #444', borderRadius: '8px',
+        padding: '1rem', minWidth: '220px', zIndex: 50,
+        boxShadow: '0 4px 15px rgba(0,0,0,0.4)', color: '#fff',
+        transition: 'opacity 0.25s ease, transform 0.25s ease',
+        opacity: profileDropdownOpen ? 1 : 0,
+        transform: profileDropdownOpen ? 'translateY(0)' : 'translateY(-10px)',
+        pointerEvents: profileDropdownOpen ? 'auto' : 'none'
+    };
+
+    const dropdownButtonStyles = {
+        display: 'block', width: '100%', marginBottom: '0.5rem',
+        background: '#222', color: '#fff', border: 'none',
+        padding: '0.5rem 0.75rem', borderRadius: '4px', cursor: 'pointer',
+    };
+
+    const configContainerStyle = {
+        margin: '10px auto',
+        padding: '15px',
+        background: 'rgba(26, 26, 26, 0.6)',
+        borderRadius: '12px',
+        border: '1px solid #333',
+        maxWidth: '450px',
+        textAlign: 'center'
+    };
+
+    const selectStyle = {
+        background: '#000',
+        color: '#d4af37',
+        border: '1px solid #d4af37',
+        padding: '8px 12px',
+        borderRadius: '4px',
+        fontSize: '1rem',
+        fontFamily: 'serif',
+        cursor: 'pointer',
+        outline: 'none',
+        margin: '0 5px'
+    };
+
     // --- Session & Initial Load ---
     useEffect(() => {
         const load = async () => {
@@ -266,6 +328,33 @@ export function Game({ user, onSignOut }) {
                         <h3>{errorMessage.title}</h3>
                         <p>{errorMessage.message}</p>
                         <button onClick={() => setErrorMessage(null)} className="button-primary">Acknowledge</button>
+                    </div>
+                </div>
+            )}
+
+            {editProfileOpen && (
+                <div className="custom-modal-overlay">
+                    <div className="custom-modal-content edit-profile-modal">
+                        <h3>Edit Profile</h3>
+                        <div className="form-group">
+                            <label>New Username:</label>
+                            <input type="text" value={newUsername} onChange={e => setNewUsername(e.target.value)} />
+                            <button className="button-primary" onClick={handleUsernameChange}>Save Username</button>
+                        </div>
+                        <div className="form-group">
+                            <label>Current Password:</label>
+                            <input type="password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} />
+                        </div>
+                        <div className="form-group">
+                            <label>New Password:</label>
+                            <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} />
+                        </div>
+                        <div className="form-group">
+                            <label>Confirm New Password:</label>
+                            <input type="password" value={confirmNewPassword} onChange={e => setConfirmNewPassword(e.target.value)} />
+                            <button className="button-primary" onClick={handlePasswordChange}>Change Password</button>
+                        </div>
+                        <button className="button-primary button-danger" onClick={() => setEditProfileOpen(false)}>Close</button>
                     </div>
                 </div>
             )}
