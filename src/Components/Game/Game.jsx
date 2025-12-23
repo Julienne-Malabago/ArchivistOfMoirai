@@ -241,34 +241,71 @@ export function Game({ user, onSignOut }) {
             </div>
 
             {/* Fragment Section */}
-            <div className="archival-scroll fragment-container">
-                <h3 className="scroll-title">{gameMode === 'Story' ? `Eternal Chronicle (Part ${displayAttemptCount})` : 'The Archival Scroll'}</h3>
-                <p className="scroll-fragment">{currentFragment || "Select a configuration to begin the record..."}</p>
+             <div className="archival-scroll fragment-container">
+                <h3 className="scroll-title">The Archival Scroll (Fragment)</h3>
+                <h3 className="scroll-title">
+                    {gameMode === 'Story' ? `The Eternal Chronicle (Part ${displayAttemptCount})` : 'The Archival Scroll (Fragment)'}
+                </h3>
+                <p className="scroll-fragment fragment-text">
+                    {(gameState === 'loading' || gameState === 'error') ? "Accessing the Archival Stream..." : (currentFragment || "Select a genre and press 'Start Round'...")}
+                    {(gameState === 'loading' || gameState === 'error') ? "Accessing the Archival Stream..." : (currentFragment || "Choose your settings and begin the record...")}
+                </p>
             </div>
 
-            {/* Interaction Layer */}
-            {gameState === 'playing' && (
-                <div className="classifier">
-                    <div className="classifier-buttons">
-                        {classifierOptions.map(option => (
-                            <button key={option} className="classifier-button" onClick={() => handleClassification(option)}>{option}</button>
-                        ))}
+@@ -523,26 +540,43 @@ export function Game({ user, onSignOut }) {
+                            <hr />
+                            <p className="revelation-justification"><strong>Revelation:</strong> {revelationText}</p>
+                        </div>
+                        <button className="button-primary continue-button" onClick={() => startNewRound(stats.difficultyTier)}>Continue to Next Fragment</button>
+                        <button className="button-primary continue-button" onClick={() => startNewRound(stats.difficultyTier)}>
+                            {attemptCount === 0 ? "Begin Next Round" : "Next Fragment"}
+                        </button>
                     </div>
                 </div>
             )}
 
-            {gameState === 'revealing' && (
-                <div className="revelation-overlay">
-                    <div className="revelation-panel">
-                        <h2 className={userClassification === secretTag ? 'correct' : 'incorrect'}>
-                            {userClassification === secretTag ? '✅ Axiom Confirmed' : '❌ Axiom Error'}
-                        </h2>
-                        <p>True Force: <strong>{secretTag}</strong></p>
-                        <p className="revelation-justification">{revelationText}</p>
-                        <button className="button-primary" onClick={() => startNewRound(stats.difficultyTier)}>
-                            {attemptCount === 0 ? "Complete Round" : "Next Fragment"}
-                        </button>
+            {gameState === 'ready_to_start' && (
+                <div className="start-game-section" style={{textAlign: 'center'}}>
+                    <div style={genreContainerStyle}>
+                        <p style={{marginBottom: '10px', fontSize: '0.9rem', color: '#888', textTransform: 'uppercase', letterSpacing: '1px'}}>Choose Narrative Setting</p>
+                        <select 
+                            value={selectedGenre} 
+                            onChange={(e) => setSelectedGenre(e.target.value)}
+                            style={genreSelectStyle}
+                        >
+                            {GENRE_OPTIONS.map(genre => (
+                                <option key={genre} value={genre}>{genre}</option>
+                            ))}
+                        </select>
+                    <div style={configContainerStyle}>
+                        <p style={{marginBottom: '10px', fontSize: '0.8rem', color: '#888', textTransform: 'uppercase', letterSpacing: '1px'}}>Archive Configuration</p>
+                        <div style={{display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', flexWrap: 'wrap'}}>
+                            <select 
+                                value={selectedGenre} 
+                                onChange={(e) => setSelectedGenre(e.target.value)}
+                                style={selectStyle}
+                            >
+                                {GENRE_OPTIONS.map(genre => (
+                                    <option key={genre} value={genre}>{genre}</option>
+                                ))}
+                            </select>
+
+                            <select 
+                                value={gameMode} 
+                                onChange={(e) => setGameMode(e.target.value)}
+                                style={selectStyle}
+                            >
+                                {MODE_OPTIONS.map(mode => (
+                                    <option key={mode} value={mode}>{mode} Mode</option>
+                                ))}
+                            </select>
+                        </div>
+                        <p style={{marginTop: '10px', fontSize: '0.75rem', color: '#555', fontStyle: 'italic'}}>
+                            {gameMode === 'Story' ? "Fragments will weave a single continuous narrative." : "Each fragment is a disconnected echo from the void."}
+                        </p>
                     </div>
+                    <button className="button-primary" onClick={() => startNewRound(stats.difficultyTier)}>Start Round</button>
+                    <button className="button-primary" onClick={() => startNewRound(stats.difficultyTier)}>Initialize Archive</button>
                 </div>
             )}
 
