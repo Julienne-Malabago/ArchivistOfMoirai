@@ -21,12 +21,25 @@ export function Game({ user, onSignOut }) {
         totalIncorrect: 0,
     });
 
+    const generateEvaluation = (accuracy) => {
+        if (accuracy >= 100) return { grade: "S", rec: "Your intuition is flawless. You see the threads of reality as they truly are." };
+        if (accuracy >= 80) return { grade: "A", rec: "Exceptional archival work. Focus on the subtle overlap between Choice and Fate." };
+        if (accuracy >= 60) return { grade: "B", rec: "Strong performance. Remember: Chance is often just a pattern you haven't recognized yet." };
+        if (accuracy >= 40) return { grade: "C", rec: "Adequate. You are prone to mistaking human Choice for the iron hand of Fate." };
+        return { grade: "F", rec: "The scroll is blurred to your eyes. Study the axioms and try again, initiate." };
+    };
+
     const [gameState, setGameState] = useState('loading'); 
     const [currentFragment, setCurrentFragment] = useState("");
     const [userClassification, setUserClassification] = useState(null);
     const [secretTag, setSecretTag] = useState(null);
     const [revelationText, setRevelationText] = useState(null);
     const [errorMessage, setErrorMessage] = useState(null);
+
+    const [roundStartTime, setRoundStartTime] = useState(null);
+    const [roundLogs, setRoundLogs] = useState([]); // Tracks specific outcomes of the 5 steps
+    const [reportsOpen, setReportsOpen] = useState(false);
+    const [archivedReports, setArchivedReports] = useState([]); // Historical reports from DB
     
     // Mode & Genre State
     const [selectedGenre, setSelectedGenre] = useState('Random');
@@ -90,6 +103,7 @@ export function Game({ user, onSignOut }) {
             setCurrentFragment(fragmentText);
             setRevelationText(revText);
             setGameState('playing');
+            setRoundStartTime(Date.now());
         } catch (error) {
             setGameState('error');
             showAlert("AI Generation Error", error.message);
@@ -97,6 +111,38 @@ export function Game({ user, onSignOut }) {
     }, [stats.difficultyTier, selectedGenre, gameMode, storyHistory, showAlert]);
 
     const handleFinishRound = () => {
+        // 1. Calculate Stats for this specific round
+        const totalDuration = roundLogs.reduce((acc, log) => acc + log.duration, 0);
+        const avgDuration = (totalDuration / roundLogs.length).toFixed(2);
+        const correctCount = roundLogs.filter(l => l.isCorrect).length;
+        const accuracy = (correctCount / roundLogs.length) * 100;
+        const { grade, rec } = generateEvaluation(accuracy);
+    
+        const newReport = {
+            date: new Date().toISOString(),
+            accuracy,
+            avgDuration,
+            grade,
+            recommendation: rec,
+            mode: gameMode,
+            genre: selectedGenre
+        };
+    
+        // 2. Save to Firestore (Push to an 'archives' collection)
+        if (user?.uid) {
+            try {
+                const userRef = doc(db, "users", user.uid);
+                // We'll store reports in a sub-collection or an array. 
+                // For simplicity here, let's assume we fetch them when the user clicks 'Archive'
+                await updateDoc(userRef, {
+                    reports: [...archivedReports, newReport]
+                });
+                setArchivedReports(prev => [...prev, newReport]);
+            } catch (e) { console.error("Error saving archive:", e); }
+        }
+    
+        // 3. Reset for next round
+        setRoundLogs([]);
         setAttemptCount(0);
         setTotalRoundsPlayed(prev => prev + 1);
         setStoryHistory([]);
@@ -106,6 +152,13 @@ export function Game({ user, onSignOut }) {
     // --- Classification ---
     const handleClassification = (choice) => {
         if (gameState !== 'playing') return;
+
+        const endTime = Date.now();
+        const duration = (endTime - roundStartTime) / 1000; // in seconds
+        const isCorrect = choice === secretTag;
+
+    // Log this specific step for the final report
+    setRoundLogs(prev => [...prev, { isCorrect, duration }]);
         
         const isCorrect = choice === secretTag;
         setUserClassification(choice);
@@ -217,8 +270,47 @@ export function Game({ user, onSignOut }) {
                 </div>
             )}
 
+            {reportsOpen && (
+                <div className="custom-modal-overlay">
+                    <div className="custom-modal-content report-ledger" style={{ maxWidth: '600px', textAlign: 'left' }}>
+                        <h2 style={{ borderBottom: '1px solid #d4af37', paddingBottom: '10px' }}>📜 Archive of Progress</h2>
+                        <div style={{ maxHeight: '400px', overflowY: 'auto', marginTop: '20px' }}>
+                            {archivedReports.length === 0 ? (
+                                <p style={{fontStyle: 'italic', color: '#666'}}>No records found in the Great Library yet.</p>
+                            ) : (
+                                archivedReports.map((report, i) => (
+                                    <div key={i} style={{ marginBottom: '20px', padding: '15px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#d4af37' }}>
+                                            <strong>Record #{archivedReports.length - i}</strong>
+                                            <span>Grade: <span style={{fontSize: '1.2rem'}}>{report.grade}</span></span>
+                                        </div>
+                                        <p style={{margin: '5px 0'}}><strong>Accuracy:</strong> {report.accuracy}% | <strong>Avg Speed:</strong> {report.avgDuration}s</p>
+                                        <p style={{fontSize: '0.9rem', color: '#aaa', fontStyle: 'italic'}}>"{report.recommendation}"</p>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                        <button className="button-primary" onClick={() => setReportsOpen(false)} style={{ marginTop: '20px', width: '100%' }}>Close Ledger</button>
+                    </div>
+                </div>
+            )}
+
+           {/* Header */}
             <header className="game-header ribbon-layout">
-                <h1 className="game-title">✨ ARCHIVIST OF MOIRAI</h1>
+                <div className="header-left ribbon-left">
+                    <h1 className="game-title">✨ ARCHIVIST OF MOIRAI</h1>
+                </div>
+                <div className="header-right ribbon-right" ref={dropdownRef}>
+                    <span className="profile-icon" onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}>📜</span>
+                    {profileDropdownOpen && (
+                        <div className="dropdown-menu">
+                            <p><strong>{stats.username}</strong></p>
+                            <button onClick={() => {setShowReports(true); setProfileDropdownOpen(false)}}>📊 Reports</button>
+                            <button onClick={onSignOut}>🗝️ Log Out</button>
+                            <button onClick={() => setReportsOpen(true)} className="dropdown-item">📖 Archive of Progress</button>
+                        </div>
+                    )}
+                </div>
             </header>
 
             {/* Metrics */}
