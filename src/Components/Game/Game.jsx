@@ -106,27 +106,37 @@ export function Game({ user, onSignOut }) {
     // --- Classification ---
     const handleClassification = (choice) => {
         if (gameState !== 'playing') return;
+        
+        const isCorrect = choice === secretTag;
         setUserClassification(choice);
         setGameState('revealing');
-
-        const isCorrect = choice === secretTag;
+    
+        // 1. Calculate the new state based on current stats
         setStats(prev => {
             const newStats = { ...prev };
+            
             if (isCorrect) {
                 newStats.currentScore += 10;
                 newStats.currentStreak += 1;
                 newStats.totalCorrect += 1;
+                
                 if (newStats.currentStreak > newStats.highestStreak) newStats.highestStreak = newStats.currentStreak;
                 if (newStats.currentScore > newStats.highestScore) newStats.highestScore = newStats.currentScore;
+    
+                // Check for Tier Increase
                 if (newStats.currentStreak > 0 && newStats.currentStreak % 5 === 0) {
                     newStats.difficultyTier += 1;
-                    showAlert("Promotion", `Difficulty Tier is now ${newStats.difficultyTier}.`);
+                    // TRIGGER ALERT HERE (Outside the return)
+                    setTimeout(() => showAlert("Promotion", `Difficulty Tier is now ${newStats.difficultyTier}.`), 0);
                 }
             } else {
                 newStats.currentStreak = 0;
                 newStats.totalIncorrect += 1;
             }
+    
+            // 2. Trigger Database Update
             updateStatsInDb(newStats, totalRoundsPlayed);
+            
             return newStats;
         });
     };
@@ -193,6 +203,16 @@ export function Game({ user, onSignOut }) {
                             <button onClick={resumeSession} className="button-primary">Resume</button>
                             <button onClick={() => { sessionStorage.removeItem(GAME_SESSION_KEY); setIsSessionActive(false); }} className="button-primary button-danger">New Game</button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {errorMessage && (
+                <div className="custom-modal-overlay">
+                    <div className="custom-modal-content">
+                        <h3>{errorMessage.title}</h3>
+                        <p>{errorMessage.message}</p>
+                        <button onClick={() => setErrorMessage(null)} className="button-primary">Acknowledge</button>
                     </div>
                 </div>
             )}
