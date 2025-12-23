@@ -270,6 +270,37 @@ export function Game({ user, onSignOut }) {
         margin: '0 5px'
     };
 
+     const dropdownStyles = {
+        position: 'absolute',
+        top: 'calc(100% + 8px)',
+        right: 0,
+        background: '#1a1a1a',
+        border: '1px solid #444',
+        borderRadius: '8px',
+        padding: '1rem',
+        minWidth: '220px',
+        zIndex: 50,
+        boxShadow: '0 4px 15px rgba(0,0,0,0.4)',
+        color: '#fff',
+        transition: 'opacity 0.25s ease, transform 0.25s ease',
+        opacity: profileDropdownOpen ? 1 : 0,
+        transform: profileDropdownOpen ? 'translateY(0)' : 'translateY(-10px)',
+        pointerEvents: profileDropdownOpen ? 'auto' : 'none'
+    };
+
+    const dropdownButtonStyles = {
+        display: 'block',
+        width: '100%',
+        marginBottom: '0.5rem',
+        background: '#222',
+        color: '#fff',
+        border: 'none',
+        padding: '0.5rem 0.75rem',
+        borderRadius: '4px',
+        cursor: 'pointer',
+        transition: 'background 0.2s',
+    };
+
     if (gameState === 'loading' && !initialLoadComplete) return <div className="loading-spinner">Accessing the Archives...</div>;
 
     return (
@@ -350,22 +381,62 @@ export function Game({ user, onSignOut }) {
                 </div>
             )}
 
-            <header className="game-header ribbon-layout">
+            <header className="game-header ribbon-layout" style={{ position: 'relative' }}>
                 <div className="header-left ribbon-left">
-                    <h1 className="game-title">✨ ARCHIVIST OF MOIRAI</h1>
+                    <div className="title-block">
+                        <span className="star-icon">✨</span>
+                        <h1 className="game-title">ARCHIVIST OF MOIRAI</h1>
+                    </div>
                 </div>
-                <div className="header-right ribbon-right" ref={dropdownRef}>
-                    <span className="profile-icon" onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}>📜</span>
-                    {profileDropdownOpen && (
-                        <div className="dropdown-menu">
-                            <p><strong>{stats.username}</strong></p>
-                            <button onClick={() => { setReportsOpen(true); setProfileDropdownOpen(false); }}>📖 Archive of Progress</button>
-                            <button onClick={() => { setEditProfileOpen(true); setProfileDropdownOpen(false); }}>⚙️ Edit Profile</button>
-                            <button onClick={onSignOut}>🗝️ Log Out</button>
+            
+                <div className="header-right ribbon-right" style={{ position: 'relative' }} ref={dropdownRef}>
+                    <span
+                        className="profile-icon"
+                        style={{ fontSize: '2rem', cursor: 'pointer', display: 'block' }}
+                        onClick={() => setProfileDropdownOpen(prev => !prev)}
+                    >
+                        📜
+                    </span>
+            
+                    {/* The Dropdown Menu */}
+                    <div style={dropdownStyles}>
+                        <div style={{ marginBottom: '10px' }}>
+                            <p style={{ textAlign: 'left', margin: '0', fontSize: '0.8rem', color: '#888', textTransform: 'uppercase' }}>Current Initiate</p>
+                            <p style={{ textAlign: 'left', margin: '2px 0', fontWeight: 'bold', color: '#d4af37' }}>{stats.username}</p>
+                            <p style={{ textAlign: 'left', margin: '0', fontSize: '0.7rem', color: '#555', wordBreak: 'break-all' }}>ID: {user?.uid}</p>
                         </div>
-                    )}
+                        
+                        <hr style={{ borderColor: '#333', margin: '0.5rem 0' }} />
+                        
+                        <button
+                            style={dropdownButtonStyles}
+                            onMouseOver={e => e.currentTarget.style.background = '#333'}
+                            onMouseOut={e => e.currentTarget.style.background = '#222'}
+                            onClick={() => { setEditProfileOpen(true); setProfileDropdownOpen(false); }}
+                        >
+                            🪶 Edit Profile
+                        </button>
+            
+                        <button
+                            style={dropdownButtonStyles}
+                            onMouseOver={e => e.currentTarget.style.background = '#333'}
+                            onMouseOut={e => e.currentTarget.style.background = '#222'}
+                            onClick={() => { setReportsOpen(true); setProfileDropdownOpen(false); }}
+                        >
+                            📖 View Archives
+                        </button>
+            
+                        <button
+                            style={{ ...dropdownButtonStyles, color: '#ff4444', marginBottom: 0 }}
+                            onMouseOver={e => e.currentTarget.style.background = '#333'}
+                            onMouseOut={e => e.currentTarget.style.background = '#222'}
+                            onClick={onSignOut}
+                        >
+                            🗝️ Log Out
+                        </button>
+                    </div>
                 </div>
-            </header>
+        </header>
 
             <div className="metrics-tally">
                 <div className="metric"><span>📖</span><p>Mode: {gameMode}</p></div>
