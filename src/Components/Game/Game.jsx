@@ -101,13 +101,12 @@ export function Game({ user, onSignOut }) {
     
         const effectiveDifficulty = currentDifficulty || stats.difficultyTier;
         const randomSecretTag = classifierOptions[Math.floor(Math.random() * classifierOptions.length)];
-        
+    
         const activeGenre = selectedGenre === 'Random' 
             ? GENRE_OPTIONS[Math.floor(Math.random() * (GENRE_OPTIONS.length - 1)) + 1] 
             : selectedGenre;
     
         try {
-            // Send history only if in Story Mode
             const contextHistory = gameMode === 'Story' ? storyHistory : [];
             
             const { fragmentText, revelationText: revText } = await fetchFragmentFromAI(
@@ -117,29 +116,30 @@ export function Game({ user, onSignOut }) {
                 contextHistory
             );
     
-            const nextAttemptCount = attemptCount === 4 ? 0 : attemptCount + 1;
-            
+            // Increment attempt count only on fragment generation
+            const nextAttemptCount = attemptCount + 1;
+    
             // Manage Story History
             if (gameMode === 'Story') {
-                if (nextAttemptCount === 0) {
-                    setStoryHistory([]); // Reset history after full round of 5
-                } else {
-                    setStoryHistory(prev => [...prev, fragmentText]); // Add to context
-                }
+                setStoryHistory(prev => [...prev, fragmentText]);
             } else {
-                setStoryHistory([]); // Clear history in Random mode
-            }
-
-            setAttemptCount(nextAttemptCount);
-            if (nextAttemptCount === 0) {
-                setTotalRoundsPlayed(prev => prev + 1);
+                setStoryHistory([]);
             }
     
+            setAttemptCount(nextAttemptCount);
             setSecretTag(randomSecretTag);
             setCurrentFragment(fragmentText);
             setRevelationText(revText);
             setGameState('playing');
-            
+    
+            // If round is complete (5 fragments), reset attempt count and show config next
+            if (nextAttemptCount >= 5) {
+                setAttemptCount(0);
+                setTotalRoundsPlayed(prev => prev + 1);
+                setGameState('ready_to_start'); // prompt genre/mode selection again
+                setStoryHistory([]); // clear story for next round
+            }
+    
         } catch (error) {
             console.error("Fragment generation failed:", error);
             setSecretTag("ERROR");
@@ -148,6 +148,7 @@ export function Game({ user, onSignOut }) {
             showAlert("AI Generation Error", error.message || String(error));
         }
     }, [stats.difficultyTier, attemptCount, showAlert, classifierOptions, selectedGenre, gameMode, storyHistory]);
+
 
     // --- Load User Stats & Session ---
     useEffect(() => {
@@ -285,18 +286,18 @@ export function Game({ user, onSignOut }) {
         if (gameState !== 'playing') return;
         setUserClassification(choice);
         setGameState('revealing');
-
+    
         const isCorrect = choice === secretTag;
         let newStats = { ...stats };
         let promotionMessage = null;
-
+    
         if (isCorrect) {
             newStats.currentScore += 10;
             newStats.currentStreak += 1;
             newStats.totalCorrect += 1;
             if (newStats.currentStreak > newStats.highestStreak) newStats.highestStreak = newStats.currentStreak;
             if (newStats.currentScore > newStats.highestScore) newStats.highestScore = newStats.currentScore;
-            
+    
             if (newStats.currentStreak > 0 && newStats.currentStreak % 5 === 0) {
                 newStats.difficultyTier += 1;
                 promotionMessage = `Archivist Promotion! Difficulty Tier is now ${newStats.difficultyTier}.`;
@@ -305,11 +306,12 @@ export function Game({ user, onSignOut }) {
             newStats.currentStreak = 0;
             newStats.totalIncorrect += 1;
         }
-
+    
         setStats(newStats);
         updateStatsInDb(newStats, totalRoundsPlayed);
         if (promotionMessage) showAlert("Promotion Achieved", promotionMessage);
     };
+
 
     const handleSignOut = useCallback(async () => {
         sessionStorage.removeItem(GAME_SESSION_KEY);
@@ -540,9 +542,9 @@ export function Game({ user, onSignOut }) {
                             <hr />
                             <p className="revelation-justification"><strong>Revelation:</strong> {revelationText}</p>
                         </div>
-                        <button className="button-primary continue-button" onClick={() => startNewRound(stats.difficultyTier)}>
-                            {attemptCount === 0 ? "Begin Next Round" : "Next Fragment"}
-                        </button>
+                       <button className="button-primary continue-button" onClick={() => startNewRound(stats.difficultyTier)}>
+                           {attemptCount === 0 ? "Begin Next Round" : "Next Fragment"}
+                       </button>
                     </div>
                 </div>
             )}
