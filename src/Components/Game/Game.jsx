@@ -247,8 +247,28 @@ export function Game({ user, onSignOut }) {
     };
 
     // Styling Helpers
-    const selectStyle = { background: '#000', color: '#d4af37', border: '1px solid #d4af37', padding: '8px 12px', borderRadius: '4px', fontFamily: 'serif', cursor: 'pointer', margin: '0 5px' };
-    const configContainerStyle = { margin: '10px auto', padding: '15px', background: 'rgba(26, 26, 26, 0.6)', borderRadius: '12px', border: '1px solid #333', maxWidth: '450px', textAlign: 'center' };
+    const configContainerStyle = {
+        margin: '10px auto',
+        padding: '15px',
+        background: 'rgba(26, 26, 26, 0.6)',
+        borderRadius: '12px',
+        border: '1px solid #333',
+        maxWidth: '450px',
+        textAlign: 'center'
+    };
+    
+    const selectStyle = {
+        background: '#000',
+        color: '#d4af37', // Gold archival color
+        border: '1px solid #d4af37',
+        padding: '8px 12px',
+        borderRadius: '4px',
+        fontSize: '1rem',
+        fontFamily: 'serif',
+        cursor: 'pointer',
+        outline: 'none',
+        margin: '0 5px'
+    };
 
     if (gameState === 'loading' && !initialLoadComplete) return <div className="loading-spinner">Accessing the Archives...</div>;
 
@@ -398,17 +418,66 @@ export function Game({ user, onSignOut }) {
             )}
 
             {gameState === 'ready_to_start' && (
-                <div className="start-game-section">
+                <div className="start-game-section" style={{ textAlign: 'center' }}>
                     <div style={configContainerStyle}>
-                        <p style={{color: '#888', fontSize: '0.8rem', textTransform: 'uppercase'}}>Configure Record</p>
-                        <select value={selectedGenre} onChange={(e) => setSelectedGenre(e.target.value)} style={selectStyle}>
-                            {GENRE_OPTIONS.map(g => <option key={g} value={g}>{g}</option>)}
-                        </select>
-                        <select value={gameMode} onChange={(e) => setGameMode(e.target.value)} style={selectStyle}>
-                            {MODE_OPTIONS.map(m => <option key={m} value={m}>{m} Mode</option>)}
-                        </select>
+                        <p style={{ 
+                            marginBottom: '10px', 
+                            fontSize: '0.8rem', 
+                            color: '#888', 
+                            textTransform: 'uppercase', 
+                            letterSpacing: '1px' 
+                        }}>
+                            Archive Configuration
+                        </p>
+                        
+                        <div style={{ 
+                            display: 'flex', 
+                            justifyContent: 'center', 
+                            alignItems: 'center', 
+                            gap: '10px', 
+                            flexWrap: 'wrap' 
+                        }}>
+                            {/* Genre Selector */}
+                            <select 
+                                value={selectedGenre} 
+                                onChange={(e) => setSelectedGenre(e.target.value)} 
+                                style={selectStyle}
+                            >
+                                {GENRE_OPTIONS.map(genre => (
+                                    <option key={genre} value={genre}>{genre}</option>
+                                ))}
+                            </select>
+            
+                            {/* Mode Selector */}
+                            <select 
+                                value={gameMode} 
+                                onChange={(e) => setGameMode(e.target.value)} 
+                                style={selectStyle}
+                            >
+                                {MODE_OPTIONS.map(mode => (
+                                    <option key={mode} value={mode}>{mode} Mode</option>
+                                ))}
+                            </select>
+                        </div>
+            
+                        <p style={{ 
+                            marginTop: '10px', 
+                            fontSize: '0.75rem', 
+                            color: '#555', 
+                            fontStyle: 'italic' 
+                        }}>
+                            {gameMode === 'Story' 
+                                ? "Fragments will weave a single continuous narrative." 
+                                : "Each fragment is a disconnected echo from the void."}
+                        </p>
                     </div>
-                    <button className="button-primary" onClick={() => { setAttemptCount(0); startNewRound(stats.difficultyTier); }}>Initialize Archive</button>
+                    
+                    <button 
+                        className="button-primary" 
+                        onClick={() => startNewRound(stats.difficultyTier)}
+                    >
+                        Initialize Archive
+                    </button>
                 </div>
             )}
         </div>
