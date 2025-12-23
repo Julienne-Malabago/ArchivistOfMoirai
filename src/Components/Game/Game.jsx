@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { doc, getDoc, updateDoc, arrayUnion } from "firebase/firestore";
 import { auth, db } from "../../firebase";
 import { fetchFragmentFromAI } from "../../api/ai";
+import { reauthenticateWithCredential, EmailAuthProvider, updatePassword } from "firebase/auth";
 
 // Constants
 const GAME_SESSION_KEY = "moirai_game_session";
@@ -21,14 +22,14 @@ export function Game({ user, onSignOut }) {
         totalIncorrect: 0,
     });
 
-    const generateEvaluation = (accuracy) => {
-        if (accuracy >= 100) return { grade: "S", rec: "Your intuition is flawless. You see the threads of reality as they truly are." };
-        if (accuracy >= 80) return { grade: "A", rec: "Exceptional archival work. Focus on the subtle overlap between Choice and Fate." };
-        if (accuracy >= 60) return { grade: "B", rec: "Strong performance. Remember: Chance is often just a pattern you haven't recognized yet." };
-        if (accuracy >= 40) return { grade: "C", rec: "Adequate. You are prone to mistaking human Choice for the iron hand of Fate." };
-        return { grade: "F", rec: "The scroll is blurred to your eyes. Study the axioms and try again, initiate." };
-    };
+    // --- Profile/Form State ---
+    const [editProfileOpen, setEditProfileOpen] = useState(false);
+    const [newUsername, setNewUsername] = useState("");
+    const [currentPassword, setCurrentPassword] = useState("");
+    const [newPassword, setNewPassword] = useState("");
+    const [confirmNewPassword, setConfirmNewPassword] = useState("");
 
+    // --- Game Logic State ---
     const [gameState, setGameState] = useState('loading'); 
     const [currentFragment, setCurrentFragment] = useState("");
     const [userClassification, setUserClassification] = useState(null);
@@ -37,11 +38,10 @@ export function Game({ user, onSignOut }) {
     const [errorMessage, setErrorMessage] = useState(null);
 
     const [roundStartTime, setRoundStartTime] = useState(null);
-    const [roundLogs, setRoundLogs] = useState([]); // Tracks specific outcomes of the 5 steps
+    const [roundLogs, setRoundLogs] = useState([]); 
     const [reportsOpen, setReportsOpen] = useState(false);
-    const [archivedReports, setArchivedReports] = useState([]); // Historical reports from DB
+    const [archivedReports, setArchivedReports] = useState([]); 
     
-    // Mode & Genre State
     const [selectedGenre, setSelectedGenre] = useState('Random');
     const [gameMode, setGameMode] = useState('Random');
     const [storyHistory, setStoryHistory] = useState([]); 
@@ -50,20 +50,23 @@ export function Game({ user, onSignOut }) {
     const [totalRoundsPlayed, setTotalRoundsPlayed] = useState(0);
     const [initialLoadComplete, setInitialLoadComplete] = useState(false);
     const [isSessionActive, setIsSessionActive] = useState(false);
-
     const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
-    const [editProfileOpen, setEditProfileOpen] = useState(false);
-    const [newUsername, setNewUsername] = useState("");
 
     const classifierOptions = ['FATE', 'CHOICE', 'CHANCE'];
     const dropdownRef = useRef(null);
 
     const showAlert = useCallback((title, message) => setErrorMessage({ title, message }), []);
-
     const totalAttempts = stats.totalCorrect + stats.totalIncorrect;
     const accuracyRate = totalAttempts > 0 ? ((stats.totalCorrect / totalAttempts) * 100).toFixed(1) : '0.0';
 
-    // --- Update Stats in Firestore ---
+    const generateEvaluation = (accuracy) => {
+        if (accuracy >= 100) return { grade: "S", rec: "Your intuition is flawless. You see the threads of reality as they truly are." };
+        if (accuracy >= 80) return { grade: "A", rec: "Exceptional archival work. Focus on the subtle overlap between Choice and Fate." };
+        if (accuracy >= 60) return { grade: "B", rec: "Strong performance. Remember: Chance is often just a pattern you haven't recognized yet." };
+        if (accuracy >= 40) return { grade: "C", rec: "Adequate. You are prone to mistaking human Choice for the iron hand of Fate." };
+        return { grade: "F", rec: "The scroll is blurred to your eyes. Study the axioms and try again, initiate." };
+    };
+
     const updateStatsInDb = useCallback(async (newStats, roundsPlayed) => {
         if (!user?.uid) return;
         try {
@@ -74,7 +77,6 @@ export function Game({ user, onSignOut }) {
         } catch (error) { console.error("Firestore Update Error:", error); }
     }, [user]);
 
-    // --- Core Game Logic: Fetching Fragment ---
     const startNewRound = useCallback(async (currentDifficulty) => {
         setGameState('loading');
         setErrorMessage(null);
@@ -93,9 +95,7 @@ export function Game({ user, onSignOut }) {
                 effectiveDifficulty, randomSecretTag, activeGenre, contextHistory
             );
 
-            // Increment count only when a fragment is successfully generated
             setAttemptCount(prev => prev + 1);
-            
             if (gameMode === 'Story') setStoryHistory(prev => [...prev, fragmentText]);
             else setStoryHistory([]);
 
@@ -110,12 +110,12 @@ export function Game({ user, onSignOut }) {
         }
     }, [stats.difficultyTier, selectedGenre, gameMode, storyHistory, showAlert]);
 
-    const handleFinishRound = () => {
-        // 1. Calculate Stats for this specific round
+    // FIX: Marked as async to allow await usage
+    const handleFinishRound = async () => {
         const totalDuration = roundLogs.reduce((acc, log) => acc + log.duration, 0);
-        const avgDuration = (totalDuration / roundLogs.length).toFixed(2);
+        const avgDuration = (totalDuration / Math.max(roundLogs.length, 1)).toFixed(2);
         const correctCount = roundLogs.filter(l => l.isCorrect).length;
-        const accuracy = (correctCount / roundLogs.length) * 100;
+        const accuracy = (correctCount / Math.max(roundLogs.length, 1)) * 100;
         const { grade, rec } = generateEvaluation(accuracy);
     
         const newReport = {
@@ -128,20 +128,17 @@ export function Game({ user, onSignOut }) {
             genre: selectedGenre
         };
     
-        // 2. Save to Firestore (Push to an 'archives' collection)
         if (user?.uid) {
             try {
                 const userRef = doc(db, "users", user.uid);
-                // We'll store reports in a sub-collection or an array. 
-                // For simplicity here, let's assume we fetch them when the user clicks 'Archive'
+                // Use arrayUnion to safely add to the reports array in Firestore
                 await updateDoc(userRef, {
-                    reports: [...archivedReports, newReport]
+                    reports: arrayUnion(newReport)
                 });
                 setArchivedReports(prev => [...prev, newReport]);
             } catch (e) { console.error("Error saving archive:", e); }
         }
     
-        // 3. Reset for next round
         setRoundLogs([]);
         setAttemptCount(0);
         setTotalRoundsPlayed(prev => prev + 1);
@@ -149,47 +146,33 @@ export function Game({ user, onSignOut }) {
         setGameState('ready_to_start');
     };
 
-    // --- Classification ---
     const handleClassification = (choice) => {
         if (gameState !== 'playing') return;
 
-        const endTime = Date.now();
-        const duration = (endTime - roundStartTime) / 1000; // in seconds
+        const duration = (Date.now() - roundStartTime) / 1000;
         const isCorrect = choice === secretTag;
 
-    // Log this specific step for the final report
-    setRoundLogs(prev => [...prev, { isCorrect, duration }]);
-        
-        const isCorrect = choice === secretTag;
+        setRoundLogs(prev => [...prev, { isCorrect, duration }]);
         setUserClassification(choice);
         setGameState('revealing');
     
-        // 1. Calculate the new state based on current stats
         setStats(prev => {
             const newStats = { ...prev };
-            
             if (isCorrect) {
                 newStats.currentScore += 10;
                 newStats.currentStreak += 1;
                 newStats.totalCorrect += 1;
-                
                 if (newStats.currentStreak > newStats.highestStreak) newStats.highestStreak = newStats.currentStreak;
                 if (newStats.currentScore > newStats.highestScore) newStats.highestScore = newStats.currentScore;
-    
-                // Check for Tier Increase
                 if (newStats.currentStreak > 0 && newStats.currentStreak % 5 === 0) {
                     newStats.difficultyTier += 1;
-                    // TRIGGER ALERT HERE (Outside the return)
                     setTimeout(() => showAlert("Promotion", `Difficulty Tier is now ${newStats.difficultyTier}.`), 0);
                 }
             } else {
                 newStats.currentStreak = 0;
                 newStats.totalIncorrect += 1;
             }
-    
-            // 2. Trigger Database Update
             updateStatsInDb(newStats, totalRoundsPlayed);
-            
             return newStats;
         });
     };
@@ -206,57 +189,19 @@ export function Game({ user, onSignOut }) {
     };
 
     const handlePasswordChange = async () => {
-        if (!currentPassword || !newPassword || newPassword !== confirmNewPassword) return;
+        if (!currentPassword || !newPassword || newPassword !== confirmNewPassword) {
+            showAlert("Error", "Please verify your password inputs.");
+            return;
+        }
         try {
-            const credential = auth.EmailAuthProvider.credential(user.email, currentPassword);
-            await auth.currentUser.reauthenticateWithCredential(credential); 
-            await auth.currentUser.updatePassword(newPassword);
+            const credential = EmailAuthProvider.credential(user.email, currentPassword);
+            await reauthenticateWithCredential(auth.currentUser, credential); 
+            await updatePassword(auth.currentUser, newPassword);
             setEditProfileOpen(false);
             showAlert("Success", "Password updated.");
         } catch (e) { showAlert("Error", e.message); }
     };
 
-     const dropdownStyles = {
-        position: 'absolute', top: 'calc(100% + 8px)', right: 0,
-        background: '#1a1a1a', border: '1px solid #444', borderRadius: '8px',
-        padding: '1rem', minWidth: '220px', zIndex: 50,
-        boxShadow: '0 4px 15px rgba(0,0,0,0.4)', color: '#fff',
-        transition: 'opacity 0.25s ease, transform 0.25s ease',
-        opacity: profileDropdownOpen ? 1 : 0,
-        transform: profileDropdownOpen ? 'translateY(0)' : 'translateY(-10px)',
-        pointerEvents: profileDropdownOpen ? 'auto' : 'none'
-    };
-
-    const dropdownButtonStyles = {
-        display: 'block', width: '100%', marginBottom: '0.5rem',
-        background: '#222', color: '#fff', border: 'none',
-        padding: '0.5rem 0.75rem', borderRadius: '4px', cursor: 'pointer',
-    };
-
-    const configContainerStyle = {
-        margin: '10px auto',
-        padding: '15px',
-        background: 'rgba(26, 26, 26, 0.6)',
-        borderRadius: '12px',
-        border: '1px solid #333',
-        maxWidth: '450px',
-        textAlign: 'center'
-    };
-
-    const selectStyle = {
-        background: '#000',
-        color: '#d4af37',
-        border: '1px solid #d4af37',
-        padding: '8px 12px',
-        borderRadius: '4px',
-        fontSize: '1rem',
-        fontFamily: 'serif',
-        cursor: 'pointer',
-        outline: 'none',
-        margin: '0 5px'
-    };
-
-    // --- Session & Initial Load ---
     useEffect(() => {
         const load = async () => {
             if (!user) return;
@@ -265,6 +210,7 @@ export function Game({ user, onSignOut }) {
                 const d = docSnap.data();
                 setStats(s => ({ ...s, ...d, currentScore: 0, currentStreak: 0 }));
                 setTotalRoundsPlayed(d.totalRoundsPlayed || 0);
+                setArchivedReports(d.reports || []);
             }
             const stored = sessionStorage.getItem(GAME_SESSION_KEY);
             if (stored) setIsSessionActive(true);
@@ -300,7 +246,7 @@ export function Game({ user, onSignOut }) {
         setIsSessionActive(false);
     };
 
-    // --- Styles ---
+    // Styling Helpers
     const selectStyle = { background: '#000', color: '#d4af37', border: '1px solid #d4af37', padding: '8px 12px', borderRadius: '4px', fontFamily: 'serif', cursor: 'pointer', margin: '0 5px' };
     const configContainerStyle = { margin: '10px auto', padding: '15px', background: 'rgba(26, 26, 26, 0.6)', borderRadius: '12px', border: '1px solid #333', maxWidth: '450px', textAlign: 'center' };
 
@@ -367,7 +313,7 @@ export function Game({ user, onSignOut }) {
                             {archivedReports.length === 0 ? (
                                 <p style={{fontStyle: 'italic', color: '#666'}}>No records found in the Great Library yet.</p>
                             ) : (
-                                archivedReports.map((report, i) => (
+                                [...archivedReports].reverse().map((report, i) => (
                                     <div key={i} style={{ marginBottom: '20px', padding: '15px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', color: '#d4af37' }}>
                                             <strong>Record #{archivedReports.length - i}</strong>
@@ -384,7 +330,6 @@ export function Game({ user, onSignOut }) {
                 </div>
             )}
 
-           {/* Header */}
             <header className="game-header ribbon-layout">
                 <div className="header-left ribbon-left">
                     <h1 className="game-title">✨ ARCHIVIST OF MOIRAI</h1>
@@ -394,15 +339,14 @@ export function Game({ user, onSignOut }) {
                     {profileDropdownOpen && (
                         <div className="dropdown-menu">
                             <p><strong>{stats.username}</strong></p>
-                            <button onClick={() => {setShowReports(true); setProfileDropdownOpen(false)}}>📊 Reports</button>
+                            <button onClick={() => { setReportsOpen(true); setProfileDropdownOpen(false); }}>📖 Archive of Progress</button>
+                            <button onClick={() => { setEditProfileOpen(true); setProfileDropdownOpen(false); }}>⚙️ Edit Profile</button>
                             <button onClick={onSignOut}>🗝️ Log Out</button>
-                            <button onClick={() => setReportsOpen(true)} className="dropdown-item">📖 Archive of Progress</button>
                         </div>
                     )}
                 </div>
             </header>
 
-            {/* Metrics */}
             <div className="metrics-tally">
                 <div className="metric"><span>📖</span><p>Mode: {gameMode}</p></div>
                 <div className="metric"><span>#</span><p>Rounds: {totalRoundsPlayed}</p></div>
@@ -413,7 +357,6 @@ export function Game({ user, onSignOut }) {
                 <div className="metric"><span>🎯</span><p>Acc: {accuracyRate}%</p></div>
             </div>
 
-            {/* Main Content */}
             <div className="archival-scroll fragment-container">
                 <h3 className="scroll-title">
                     {gameMode === 'Story' ? `The Eternal Chronicle (Part ${attemptCount})` : `Fragment ${attemptCount} of 5`}
@@ -464,9 +407,6 @@ export function Game({ user, onSignOut }) {
                         <select value={gameMode} onChange={(e) => setGameMode(e.target.value)} style={selectStyle}>
                             {MODE_OPTIONS.map(m => <option key={m} value={m}>{m} Mode</option>)}
                         </select>
-                        <p style={{marginTop: '10px', fontSize: '0.75rem', fontStyle: 'italic', color: '#666'}}>
-                            {gameMode === 'Story' ? "A continuous narrative thread." : "Disconnected echoes from the void."}
-                        </p>
                     </div>
                     <button className="button-primary" onClick={() => { setAttemptCount(0); startNewRound(stats.difficultyTier); }}>Initialize Archive</button>
                 </div>
